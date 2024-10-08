@@ -1,0 +1,9 @@
+# Namco System 246/256 dongle dumper
+
+This application will access the namco system 246/256 arcade memory card (`COH-H10020`) from memory card port 1 and dump the whole card sector by sector to a local file on your USB. named as `COH-H10020.bin`. this program will check if the host machine is actually arcade hardware before running to avoid issues.
+
+Please read the file LICENSE for more details
+
+source code will eventually be uploaded to github
+
+usb device must be FAT32 or EXFAT. always MBR
