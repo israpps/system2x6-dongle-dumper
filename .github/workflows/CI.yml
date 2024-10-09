@@ -30,10 +30,12 @@ jobs:
 
       - name: Create release
         if: github.ref == 'refs/heads/main'
-        uses: mathieucarbou/marvinpinto-action-automatic-releases@latest
+        uses: softprops/action-gh-release@v2
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: "latest"
+          prerelease: true
+          generate_release_notes: true
+          tag_name: "latest"
           title: "Latest development build"
+          body: "![dl](https://img.shields.io/github/downloads/israpps/system2x6-dongle-dumper/latest/total?style=for-the-badge&logo=github)"
           files: |
             DONGLE_DUMPER.ELF
