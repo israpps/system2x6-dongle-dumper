@@ -7,6 +7,7 @@
 #include <libcdvd-common.h>
 #include <libcdvd.h>
 #include <unistd.h>
+#include <debug.h>
 
 #define MODEL_NAME_MAX_LEN 17
 static char ModelName[MODEL_NAME_MAX_LEN];

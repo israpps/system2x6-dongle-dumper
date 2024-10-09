@@ -1,10 +1,9 @@
-
-#  ___________.__     .___                       
-#  \_   _____/|  |    |   | __________________   
-#   |    __)_ |  |    |   |/  ___/\_  __ \__  \  
-#   |        \|  |__  |   |\___ \  |  | \// __ \_
-#  /_______  /|____/  |___/____  > |__|  (____  /
-#          \/                  \/             \/ 
+#     ____                    _        ____
+#    |  _ \  ___  _ __   __ _| | ___  |  _ \ _   _ _ __ ___  _ __   ___ _ __
+#    | | | |/ _ \| '_ \ / _` | |/ _ \ | | | | | | | '_ ` _ \| '_ \ / _ \ '__|
+#    | |_| | (_) | | | | (_| | |  __/ | |_| | |_| | | | | | | |_) |  __/ |
+#    |____/ \___/|_| |_|\__, |_|\___| |____/ \__,_|_| |_| |_| .__/ \___|_|
+#                       |___/                               |_|
 # security dongle dumper for PlayStation2 based namco system 246/256
 
 EE_BIN = DONGLE_DUMPER.ELF
@@ -12,13 +11,13 @@ EE_BIN = DONGLE_DUMPER.ELF
 EE_OBJS = main.o modelname.o ioprp.o \
 	usbd.o bdm.o bdmfs_fatfs.o usbmass_bd.o genvmc.o fileXio.o iomanX.o
 
-EE_CFLAGS += -fdata-sections -ffunction-sections
+EE_CFLAGS += -fdata-sections -ffunction-sections -DNEWLIB_PORT_AWARE
 EE_LDFLAGS += -Wl,--gc-sections
-EE_LIBS += -lmc -liopreboot -ldebug -lpatches -lfileXio -lcdvd
+EE_LIBS += -liopreboot -ldebug -lpatches -lfileXio -lcdvd
 
 ifeq ($(DEBUG), 1)
   EE_CFLAGS += -DDEBUG -O0 -g
-else 
+else
   EE_CFLAGS += -Os
   EE_LDFLAGS += -s
 endif

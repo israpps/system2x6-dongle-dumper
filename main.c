@@ -1,5 +1,20 @@
+/**
+ *      ____                    _        ____                                  
+ *     |  _ \  ___  _ __   __ _| | ___  |  _ \ _   _ _ __ ___  _ __   ___ _ __ 
+ *     | | | |/ _ \| '_ \ / _` | |/ _ \ | | | | | | | '_ ` _ \| '_ \ / _ \ '__|
+ *     | |_| | (_) | | | | (_| | |  __/ | |_| | |_| | | | | | | |_) |  __/ |   
+ *     |____/ \___/|_| |_|\__, |_|\___| |____/ \__,_|_| |_| |_| .__/ \___|_|   
+ *                        |___/                               |_|              
+ *  PlayStation 2 Arcade dongle dumper 
+ *  Copyright (c) 2024 Matias Israelson - MIT license
+ */
+
 #include <kernel.h>
 #include <stdio.h>
+#include <iopheap.h>
+#include <rom0_info.h>
+#include <fileio.h>
+#include <fileXio_rpc.h>
 #include <iopcontrol.h>
 #include <iopcontrol_special.h>
 #include <loadfile.h>
@@ -36,6 +51,7 @@ EXTERN_MODULE(iomanX_irx);
 int loadusb();
 
 char ROMVER[15];
+int loadmodulemc();
 
 int main(int argc, char** argv) {
     sio_puts("# dongle dumper start\n# BuilDate: "__DATE__ " " __TIME__ "\n");
@@ -54,6 +70,7 @@ int main(int argc, char** argv) {
     GetRomName(ROMVER);
     scr_printf(".\n\t ===== Namco System 246/256 security dongle dumper =====\n");
     scr_printf("\tCoded by El_isra. genvmc module borrowed from OPL\n");
+    scr_printf("\thttps://github.com/israpps/system2x6-dongle-dumper\n");
     scr_printf("\tROMVER:        %s\n", ROMVER);
     ModelNameInit();
     scr_printf("\tConsole model: %s\n", ModelNameGet());
@@ -67,8 +84,6 @@ int main(int argc, char** argv) {
         scr_printf("\tthis PS2 is NOT a namco system 246.\n\taborting...\n");
         goto tosleep;
     }
-
-    scr_printf("\tLoading usb modules:\n");
     if (!loadusb()) goto tosleep;
     
     iomanX.id = LOADMODULE(iomanX_irx, &iomanX.ret);
@@ -162,7 +177,6 @@ int loadusb() {
 }
 
 int loadmodulemc() {
-    int id, ret;
     //sio2man.id = LOADMODULEFILE("mass:/SIO2MAN", &sio2man.ret);
     //if (!MODULE_OK(sio2man.id, sio2man.ret))
         sio2man.id = LOADMODULEFILE("rom0:SIO2MAN", &sio2man.ret);
