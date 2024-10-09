@@ -35,7 +35,6 @@ jobs:
           prerelease: true
           generate_release_notes: true
           tag_name: "latest"
-          title: "Latest development build"
           body: "![dl](https://img.shields.io/github/downloads/israpps/system2x6-dongle-dumper/latest/total?style=for-the-badge&logo=github)"
           files: |
             DONGLE_DUMPER.ELF
