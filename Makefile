@@ -8,7 +8,7 @@
 .SILENT:
 EE_BIN = KELF_BINDER_$(TTY).ELF
 
-EE_OBJS = $(addprefix src/,$(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu mcman sio2man))
+EE_OBJS = $(addprefix src/,$(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu mcman mcserv sio2man))
 
 TTY = UDP
 ifeq ($(TTY), PPC)
@@ -21,7 +21,7 @@ endif
 
 EE_CFLAGS += -fdata-sections -ffunction-sections -DNEWLIB_PORT_AWARE
 EE_LDFLAGS += -Wl,--gc-sections
-EE_LIBS += -liopreboot -ldebug -lpatches -lfileXio -lcdvd
+EE_LIBS += $(addprefix -l, iopreboot debug patches fileXio cdvd mc)
 
 ifeq ($(DEBUG), 1)
   EE_CFLAGS += -DDEBUG -O0 -g
@@ -31,6 +31,7 @@ else
 endif
 
 all: $(EE_BIN)
+	$(info $(EE_BIN): built)
 
 clean:
 	rm -rf $(EE_OBJS) $(EE_BIN)

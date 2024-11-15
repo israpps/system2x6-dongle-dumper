@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <malloc.h>
 #include <sys/stat.h>
+#include <libmc.h>
 #include "mechaemu_rpc.h"
 
 
@@ -46,6 +47,7 @@ EXTERN_MODULE(fileXio_irx);
 EXTERN_MODULE(iomanX_irx);
 EXTERN_MODULE(sio2man_irx);
 EXTERN_MODULE(mcman_irx);
+EXTERN_MODULE(mcserv_irx);
 EXTERN_MODULE(secrsif_mechaemu_irx);
 #if TTY == 1
 EXTERN_MODULE(ppctty_irx);
@@ -228,13 +230,26 @@ int loadmodulemc() {
     }
     //mcserv.id =  LOADMODULEFILE("mass:/MCSERV", &mcserv.ret);
     //if (!MODULE_OK(mcserv.id, mcserv.ret))
-    /*    mcserv.id =  LOADMODULEFILE("rom0:MCSERV", &mcserv.ret);
+    
+    mcserv.id =  LOADMODULE(mcserv_irx, &mcserv.ret);
     INFORM(mcserv);
     if (!MODULE_OK(mcserv.id, mcserv.ret)) {
         return -1;
-    }*/
+    }
+    mcInit(MC_TYPE_XMC);
 
-
+    int mcformatted= MC_UNFORMATTED, mctype, mcfreeSpace, ret;
+    mcGetInfo(MCPORT, 0, &mctype, &mcfreeSpace, &mcformatted);
+    mcSync(0, NULL, &ret);
+    
+    scr_printf("\tmc%d: ", MCPORT );
+    if (mctype != sceMcTypePS2 ) scr_setfontcolor(0x0000CC);
+    scr_printf("CardType:%d ", mctype );
+    scr_setfontcolor(0xFFFFFF);
+    scr_printf("FreeSpace:%d ", mcfreeSpace );
+    if (mcformatted != MC_FORMATTED ) scr_setfontcolor(0x0000CC);
+    scr_printf("Formatted:%d\n", mcformatted);
+    scr_setfontcolor(0xFFFFFF);
     return 0;
 }
 
