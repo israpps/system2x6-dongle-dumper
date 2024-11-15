@@ -6,9 +6,9 @@
 #                       |___/                               |_|
 # security dongle dumper for PlayStation2 based namco system 246/256
 
-EE_BIN = DONGLE_DUMPER.ELF
+EE_BIN = DONGLE_DUMPER_$(TTY).ELF
 
-EE_OBJS = $(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu)
+EE_OBJS = $(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu mcman sio2man)
 
 TTY = UDP
 ifeq ($(TTY), PPC)

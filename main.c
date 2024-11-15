@@ -44,6 +44,8 @@ EXTERN_MODULE(usbmass_bd_irx);
 EXTERN_MODULE(genvmc_irx);
 EXTERN_MODULE(fileXio_irx);
 EXTERN_MODULE(iomanX_irx);
+EXTERN_MODULE(sio2man_irx);
+EXTERN_MODULE(mcman_irx);
 EXTERN_MODULE(secrsif_mechaemu_irx);
 #if TTY == 1
 EXTERN_MODULE(ppctty_irx);
@@ -83,8 +85,10 @@ int main(int argc, char** argv) {
     sbv_patch_disable_prefix_check(); // remove security from MODLOAD
     
 #if TTY == 1
+    sio_puts("> PPCTTY Startup");
 LOADMODULE(ppctty_irx, NULL);
 #elif TTY == 2
+    sio_puts("> UDPTTY Startup");
 LOADMODULE(ps2dev9_irx, NULL);
 LOADMODULE(udptty_standalone_irx, NULL);
 #endif
@@ -209,14 +213,15 @@ int loadusb() {
 int loadmodulemc() {
     //sio2man.id = LOADMODULEFILE("mass:/SIO2MAN", &sio2man.ret);
     //if (!MODULE_OK(sio2man.id, sio2man.ret))
-        sio2man.id = LOADMODULEFILE("rom0:SIO2MAN", &sio2man.ret);
+        sio2man.id = LOADMODULE(sio2man_irx, &sio2man.ret);
+        
     INFORM(sio2man);
     if (!MODULE_OK(sio2man.id, sio2man.ret)) {
         return -1;
     }
     //mcman.id =   LOADMODULEFILE("mass:/DONGLEMAN", &mcman.ret);
     //if (!MODULE_OK(mcman.id, mcman.ret))
-        mcman.id =   LOADMODULEFILE("rom0:MCMAN", &mcman.ret);
+        mcman.id =   LOADMODULE(mcman_irx, &mcman.ret);
     INFORM(mcman);
     if (!MODULE_OK(mcman.id, mcman.ret)) {
         return -1;
