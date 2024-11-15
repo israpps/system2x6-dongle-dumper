@@ -119,7 +119,7 @@ LOADMODULE(udptty_standalone_irx, NULL);
         goto brk;
     }
     if (loadmodulemc() == 0) {
-         scr_setfontcolor(0xFFFFFF);
+        scr_setfontcolor(0xFFFFFF);
         scr_printf("\n"); 
         uint8_t* buf;
         const char* UNBOUND = "UNBOUND.KELF";
