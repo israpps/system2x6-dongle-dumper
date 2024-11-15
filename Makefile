@@ -8,8 +8,16 @@
 
 EE_BIN = DONGLE_DUMPER.ELF
 
-EE_OBJS = main.o modelname.o ioprp.o \
-	usbd.o bdm.o bdmfs_fatfs.o usbmass_bd.o genvmc.o fileXio.o iomanX.o
+EE_OBJS = $(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu)
+
+TTY = UDP
+ifeq ($(TTY), PPC)
+EE_OBJS += ppctty.o
+EE_CFLAGS += -DTTY=1
+else ifeq ($(TTY), UDP)
+EE_OBJS += ps2dev9.o udptty_standalone.o
+EE_CFLAGS += -DTTY=2
+endif
 
 EE_CFLAGS += -fdata-sections -ffunction-sections -DNEWLIB_PORT_AWARE
 EE_LDFLAGS += -Wl,--gc-sections
@@ -27,10 +35,7 @@ all: $(EE_BIN)
 clean:
 	rm -rf $(EE_OBJS) $(EE_BIN)
 
-ioprp.img:
-	wget https://github.com/israpps/wLaunchELF_ISR/raw/system-2x6-support/iop/__precompiled/IOPRP_FILEIO.IMG -O $@
-
-%.c: %.img
+ioprp.c: IOPRP_RETAIL.IMG
 	bin2c $< $@ ioprp
 
 vpath %.irx iop/
