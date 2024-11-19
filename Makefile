@@ -36,7 +36,7 @@ all: $(EE_BIN)
 clean:
 	rm -rf $(EE_OBJS) $(EE_BIN)
 
-ioprp.c: IOPRP_RETAIL.IMG
+src/ioprp.c: IOPRP_RETAIL.IMG
 	bin2c $< $@ ioprp
 
 

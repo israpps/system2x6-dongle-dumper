@@ -24,10 +24,14 @@
 #include <ps2sdkapi.h>
 #include <string.h>
 #include <stdlib.h>
+#include <libsecr-common.h>
 #include <malloc.h>
 #include <sys/stat.h>
 #include <libmc.h>
 #include "mechaemu_rpc.h"
+void get_Kc(const void *buffer, void *Kc);
+void get_Kbit(const void *buffer, void *Kbit);
+void hexdump (const char* name, unsigned char* buf, int size);
 
 
 typedef struct {
@@ -58,12 +62,14 @@ EXTERN_MODULE(udptty_standalone_irx);
 #define LOADMODULE(_irx, ret) SifExecModuleBuffer(&_irx, size_##_irx, 0, NULL, ret)
 #define LOADMODULEFILE(path, ret) SifLoadStartModule(path, 0, NULL, ret)
 #define MODULE_OK(id, ret) (id >= 0 && ret != 1)
-#define INFORM(x) scr_setfontcolor(MODULE_OK(x.id, x.ret) ? 0x00cc00 : 0x0000cc);scr_printf(" %s: id:%d ret:%d - %-8s ", #x, x.id, x.ret, MODULE_OK(x.id, x.ret) ? "OK\r" : "ERR\n"); usleep(500000);
+#define INFORM(x) scr_setfontcolor(MODULE_OK(x.id, x.ret) ? 0x00cc00 : 0x0000cc);scr_printf(" %s: id:%d ret:%d - %-8s ", #x, x.id, x.ret, MODULE_OK(x.id, x.ret) ? "OK\r" : "ERR\n"); usleep(600000);
 int loadusb();
 
 char ROMVER[15];
 int loadmodulemc();
 #define MCPORT 0 
+unsigned char Kbit[16], Kc[16];
+unsigned char BKbit[16], BKc[16];
 int main(int argc, char** argv) {
     sio_puts("> mechaemu update binder\n> BuilDate: "__DATE__ " " __TIME__ "\n");
     while (!SifIopRebootBuffer(ioprp, size_ioprp)) {}; // we need homebrew FILEIO
@@ -144,20 +150,28 @@ LOADMODULE(udptty_standalone_irx, NULL);
                 scr_printf("\tcannot read whole KELF: %d bytes\n", size); 
                 goto brk;
             } else {
+                get_Kbit(buf, Kbit);
+                get_Kc(buf, Kc);
+                scr_printf("Unbound: \n"); hexdump("Kbit", Kbit, 16); hexdump("Kc", Kc, 16);
                 scr_printf("\tBinding update to memory card on mc%d:\n", MCPORT);
-                int result = mechaemu_downloadfile(MCPORT, 0, buf);
+                int result = mechaemu_downloadfile(MCPORT + 2, 0, buf);
                 if (result) {
-                    scr_printf("\tBinding complete. writing KELF to '%s'\n", BOUND);
+                    scr_printf("\tBinding complete\n");
+                    get_Kbit(buf, BKbit);
+                    get_Kc(buf, BKc);
+                    scr_printf("Bound: \n"); hexdump("Kbit", BKbit, 16); hexdump("Kc", BKc, 16);
+                    scr_printf( "writing KELF to '%s'\n", BOUND);
                     int outfd = open(BOUND, O_WRONLY | O_CREAT | O_TRUNC);
                     if (outfd >= 0)
                     {
                         int written = write(outfd, buf, size);
                         if (written != size) {
+                            scr_printf("\tI/O ERROR Writing output KELF\n");
                             result = -EIO;
                         }
                         close(outfd);
                     } else {
-                    scr_printf("\tmechaemu_downloadfile(%d, 0): error\n", MCPORT);
+                        scr_printf("\tmechaemu_downloadfile(%d, 0): error\n", MCPORT);
                         result = -EIO;
                     }
 
@@ -213,23 +227,17 @@ int loadusb() {
 }
 
 int loadmodulemc() {
-    //sio2man.id = LOADMODULEFILE("mass:/SIO2MAN", &sio2man.ret);
-    //if (!MODULE_OK(sio2man.id, sio2man.ret))
-        sio2man.id = LOADMODULE(sio2man_irx, &sio2man.ret);
-        
+    sio2man.id = LOADMODULE(sio2man_irx, &sio2man.ret);
     INFORM(sio2man);
     if (!MODULE_OK(sio2man.id, sio2man.ret)) {
         return -1;
     }
-    //mcman.id =   LOADMODULEFILE("mass:/DONGLEMAN", &mcman.ret);
-    //if (!MODULE_OK(mcman.id, mcman.ret))
-        mcman.id =   LOADMODULE(mcman_irx, &mcman.ret);
+    
+    mcman.id =   LOADMODULE(mcman_irx, &mcman.ret);
     INFORM(mcman);
     if (!MODULE_OK(mcman.id, mcman.ret)) {
         return -1;
     }
-    //mcserv.id =  LOADMODULEFILE("mass:/MCSERV", &mcserv.ret);
-    //if (!MODULE_OK(mcserv.id, mcserv.ret))
     
     mcserv.id =  LOADMODULE(mcserv_irx, &mcserv.ret);
     INFORM(mcserv);
@@ -241,6 +249,7 @@ int loadmodulemc() {
     int mcformatted= MC_UNFORMATTED, mctype, mcfreeSpace, ret;
     mcGetInfo(MCPORT, 0, &mctype, &mcfreeSpace, &mcformatted);
     mcSync(0, NULL, &ret);
+    scr_setfontcolor(0xFFFFFF);
     
     scr_printf("\tmc%d: ", MCPORT );
     if (mctype != sceMcTypePS2 ) scr_setfontcolor(0x0000CC);
@@ -253,4 +262,51 @@ int loadmodulemc() {
     return 0;
 }
 
-LIBCGLUE_SUPPORT_NAMCO_SYSTEM_2x6();
+
+// 0x00002b20
+void get_Kbit(const void *buffer, void *Kbit)
+{
+    const SecrKELFHeader_t *header = buffer;
+    int offset                     = sizeof(SecrKELFHeader_t);
+    u8 *kbit_offset;
+
+    if (header->BIT_count > 0)
+        offset += header->BIT_count * sizeof(SecrBitBlockData_t); // They used a loop for this. D:
+    if (((header->flags) & 1) != 0)
+        offset += ((unsigned char *)buffer)[offset] + 1;
+    if (((header->flags) & 0xF000) == 0)
+        offset += 8;
+
+    kbit_offset = (u8 *)buffer + offset;
+    memcpy(Kbit, (void *)kbit_offset, 16);
+    
+}
+
+// 0x00002c80
+void get_Kc(const void *buffer, void *Kc)
+{
+    const SecrKELFHeader_t *header = buffer;
+    int offset                     = sizeof(SecrKELFHeader_t);
+    u8 *kc_offset;
+
+    if (header->BIT_count > 0)
+        offset += header->BIT_count * sizeof(SecrBitBlockData_t); // They used a loop for this. D:
+    if (((header->flags) & 1) != 0)
+        offset += ((unsigned char *)buffer)[offset] + 1;
+    if (((header->flags) & 0xF000) == 0)
+        offset += 8;
+
+    kc_offset = (u8 *)buffer + offset + 0x10; // Goes after Kbit
+    memcpy(Kc, (void *)kc_offset, 16);
+    
+}
+void hexdump (const char* name, unsigned char* buf, int size) {
+    scr_printf("\t%s:", name);
+    for (int i = 0; i < size; i++)
+    {
+        scr_printf("%02X ", buf[i]);
+    }
+    scr_printf("\n");
+    
+}
+//LIBCGLUE_SUPPORT_NAMCO_SYSTEM_2x6();
