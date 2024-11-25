@@ -6,7 +6,7 @@
 #                       |___/                               |_|
 # security dongle dumper for PlayStation2 based namco system 246/256
 .SILENT:
-EE_BIN = KELF_BINDER_$(TTY).ELF
+EE_BIN = CARDOGTEST.ELF
 
 EE_OBJS = $(addprefix src/,$(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu mcman mcserv sio2man))
 
@@ -32,12 +32,13 @@ endif
 
 all: $(EE_BIN)
 	$(info $(EE_BIN): built)
+	ps2-packer $(EE_BIN) PS2_OG_CARD_TEST.ELF
 
 clean:
-	rm -rf $(EE_OBJS) $(EE_BIN)
+	rm -rf $(EE_OBJS) $(EE_BIN) src/ioprp.c
 
 
-src/ioprp.c: IOPRP_RETAIL.IMG
+src/ioprp.c: IOPRP_DEVELOPER.IMG
 	bin2c $< $@ ioprp
 
 

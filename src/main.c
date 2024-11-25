@@ -9,6 +9,8 @@
  *  Copyright (c) 2024 Matias Israelson - MIT license
  */
 
+#include <smem.h>
+#include <smod.h>
 #include <kernel.h>
 #include <stdio.h>
 #include <iopheap.h>
@@ -65,6 +67,7 @@ EXTERN_MODULE(udptty_standalone_irx);
 #define INFORM(x) scr_setfontcolor(MODULE_OK(x.id, x.ret) ? 0x00cc00 : 0x0000cc);scr_printf(" %s: id:%d ret:%d - %-8s ", #x, x.id, x.ret, MODULE_OK(x.id, x.ret) ? "OK\r" : "ERR\n"); usleep(600000);
 int loadusb();
 
+smod_mod_info_t* GetIRXInfoByName(const char* name);
 char ROMVER[15];
 int loadmodulemc();
 #define MCPORT 0
@@ -100,16 +103,23 @@ LOADMODULE(ppctty_irx, NULL);
 LOADMODULE(ps2dev9_irx, NULL);
 LOADMODULE(udptty_standalone_irx, NULL);
 #endif
-    scr_printf(".\n\t ===== MECHAEMU Update binder =====\n");
-    scr_printf("\tCoded by El_isra. genvmc module borrowed from OPL\n");
+    scr_printf(".\n\t ============ OG Card Tester ============\n");
+    scr_printf("\tCoded by El_isra\n");
     //scr_printf("\thttps://github.com/israpps/system2x6-dongle-dumper\n");
-    scr_printf("\tROMVER:        %s\n", ROMVER);
+    scr_printf("\tConsole ROMVER:        %s\n", ROMVER);
     //ModelNameInit();
+    smod_mod_info_t* info = GetIRXInfoByName("secrman_nomecha");
+    if (info == NULL) {
+        scr_setfontcolor(0x0000CC);
+        scr_printf("\n\n\tCannot replace SECRMAN.IRX: Aborting\n");
+        goto brk;
+        
+    }
 
 
-    if (!loadusb()) goto tosleep;
+   // if (!loadusb()) goto tosleep;
     
-    secrsif_mechaemu.id = LOADMODULE(secrsif_mechaemu_irx, &secrsif_mechaemu.ret);
+    /*secrsif_mechaemu.id = LOADMODULE(secrsif_mechaemu_irx, &secrsif_mechaemu.ret);
     INFORM(secrsif_mechaemu);
     if (mechaemu_init()) {
         scr_printf("\tCannot connect to secrsif_mechaemu.irx\n");
@@ -125,69 +135,12 @@ LOADMODULE(udptty_standalone_irx, NULL);
     } else {
         scr_printf("\n\tFailed to load fileXio. aborting dump...\n");
         goto brk;
-    }
-    if (loadmodulemc() == 0) {
-        scr_setfontcolor(0xFFFFFF);
-        scr_printf("\n"); 
-        uint8_t* buf;
-        const char* UNBOUND = "UNBOUND.KELF";
-        const char* BOUND = "BOUND.KELF";
-        int fd = open(UNBOUND, O_RDONLY);
-        
-        if (fd < 0) {
-            scr_printf("\tcant open '%s' (%d %s)...\n", UNBOUND, fd, strerror(fd));
-            goto brk;
-        }
-        int size = lseek(fd, 0, SEEK_END);
-        scr_printf("\tKELF size is %d\n", size); 
-        if (size < 0) {
-            goto brk;
-        }
-        lseek(fd, 0, SEEK_SET);
-        if ((buf = memalign(64, size)) != NULL) {
-            if ((read(fd, buf, size)) != size) {
-                close(fd);
-                scr_printf("\tcannot read whole KELF: %d bytes\n", size); 
-                goto brk;
-            } else {
-                get_Kbit(buf, Kbit);
-                get_Kc(buf, Kc);
-                scr_printf("Unbound: \n"); hexdump("Kbit", Kbit, 16); hexdump("Kc", Kc, 16);
-                scr_printf("\tBinding update to memory card on mc%d:\n", MCPORT);
-                int result = mechaemu_downloadfile(MCPORT + 2, 0, buf);
-                if (result) {
-                    scr_printf("\tBinding complete\n");
-                    get_Kbit(buf, BKbit);
-                    get_Kc(buf, BKc);
-                    scr_printf("Bound: \n"); hexdump("Kbit", BKbit, 16); hexdump("Kc", BKc, 16);
-                    scr_printf( "writing KELF to '%s'\n", BOUND);
-                    int outfd = open(BOUND, O_WRONLY | O_CREAT | O_TRUNC);
-                    if (outfd >= 0)
-                    {
-                        int written = write(outfd, buf, size);
-                        if (written != size) {
-                            scr_printf("\tI/O ERROR Writing output KELF\n");
-                            result = -EIO;
-                        }
-                        close(outfd);
-                    } else {
-                        scr_printf("\tmechaemu_downloadfile(%d, 0): error\n", MCPORT);
-                        result = -EIO;
-                    }
-
-                } else {
-                    scr_printf("\tmechaemu_downloadfile(%d, 0): error\n", MCPORT);
-                    goto brk;
-                }
-            }
-        } else {
-            close(fd);
-            scr_printf("\tcannot allocate %d bytes\n", size);
-            goto brk;
-        }
-    }
+    }*/
+    loadmodulemc();
     brk:
-    scr_printf("Program execution end. exiting to OSDSYS in 2 minutes\n");
+    
+        scr_setfontcolor(0xFFFFFF);
+    scr_printf("\n\nProgram execution end. exiting to OSDSYS in 2 minutes\n");
     sleep(120);
     return 0;
 tosleep:
@@ -245,21 +198,41 @@ int loadmodulemc() {
         return -1;
     }
     mcInit(MC_TYPE_XMC);
+    for (int i = 0; i < 2; i++)
+    {
+        scr_printf("\n\n\tmc%d: ", i );
+        int a = 1;
+        int mcformatted= MC_UNFORMATTED, mctype = sceMcTypeNoCard, mcfreeSpace = 0, ret;
+        mcGetInfo(i, 0, &mctype, &mcfreeSpace, &mcformatted);
+        mcSync(0, NULL, &ret);
+        scr_setfontcolor(0xFFFFFF);
 
-    int mcformatted= MC_UNFORMATTED, mctype, mcfreeSpace, ret;
-    mcGetInfo(MCPORT, 0, &mctype, &mcfreeSpace, &mcformatted);
-    mcSync(0, NULL, &ret);
-    scr_setfontcolor(0xFFFFFF);
+
+        if (mctype != sceMcTypePS2 ) {scr_setfontcolor(0x0000CC); a=0;}
+        usleep(rand()%600000);
+        scr_printf("CardType:%d ", mctype );
+        scr_setfontcolor(0xFFFFFF);
+        usleep(rand()%600000);
+        scr_printf("FreeSpace:%04d ", mcfreeSpace );
+        if (mcformatted != MC_FORMATTED ) {scr_setfontcolor(0x0000CC); a=0;}
+        usleep(rand()%600000);
+        scr_printf("Formatted:%d\n", mcformatted);
+        usleep(rand()%600000);
+        if (a) {
+            scr_setfontcolor(0x00FF00);
+            scr_printf("\t\tThe card was successfully authenticated with developer magicgate\n");
+        } else {
+            scr_setfontcolor(0x0000CC);
+            scr_printf("\t\tCannot auth card with dev keys.\n\t\t\tCard is bootleg or maybe arcade/prototype card\n");
+        }
     
-    scr_printf("\tmc%d: ", MCPORT );
-    if (mctype != sceMcTypePS2 ) scr_setfontcolor(0x0000CC);
-    scr_printf("CardType:%d ", mctype );
-    scr_setfontcolor(0xFFFFFF);
-    scr_printf("FreeSpace:%d ", mcfreeSpace );
-    if (mcformatted != MC_FORMATTED ) scr_setfontcolor(0x0000CC);
-    scr_printf("Formatted:%d\n", mcformatted);
-    scr_setfontcolor(0xFFFFFF);
+    }
+    
     return 0;
+    nocard:
+    scr_printf("\tCannot auth card with dev keys\n\tCard is bootleg...\n\tOr maybe arcade/prototype card\n");
+    scr_setfontcolor(0xFFFFFF);
+    return -1;
 }
 
 
@@ -310,3 +283,23 @@ void hexdump (const char* name, unsigned char* buf, int size) {
     
 }
 //LIBCGLUE_SUPPORT_NAMCO_SYSTEM_2x6();
+
+
+smod_mod_info_t* curr = NULL;
+smod_mod_info_t* GetIRXInfoByName(const char* name) {
+    smod_mod_info_t info;
+    curr = NULL;
+    char sName[21];
+    int rv;
+    while ((rv = smod_get_next_mod(curr, &info)) != 0) {
+        curr = &info;
+        if (curr == NULL) continue;
+        smem_read(info.name, sName, 20);
+        printf("%s: v%x\n", sName, info.version);
+        sName[20] = 0;
+        if (!strcmp(name, sName)) {
+            return curr;
+        }
+    }
+    return NULL;
+}
