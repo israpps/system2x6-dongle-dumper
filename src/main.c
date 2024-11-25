@@ -67,7 +67,7 @@ int loadusb();
 
 char ROMVER[15];
 int loadmodulemc();
-#define MCPORT 0 
+#define MCPORT 0
 unsigned char Kbit[16], Kc[16];
 unsigned char BKbit[16], BKc[16];
 int main(int argc, char** argv) {

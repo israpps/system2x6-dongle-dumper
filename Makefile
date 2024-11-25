@@ -10,7 +10,7 @@ EE_BIN = KELF_BINDER_$(TTY).ELF
 
 EE_OBJS = $(addprefix src/,$(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu mcman mcserv sio2man))
 
-TTY = UDP
+TTY = PPC
 ifeq ($(TTY), PPC)
 EE_OBJS += src/ppctty.o
 EE_CFLAGS += -DTTY=1
@@ -36,10 +36,12 @@ all: $(EE_BIN)
 clean:
 	rm -rf $(EE_OBJS) $(EE_BIN)
 
+
 src/ioprp.c: IOPRP_RETAIL.IMG
 	bin2c $< $@ ioprp
 
 
+vpath %.IMG iop/
 vpath %.irx iop/
 vpath %.irx $(PS2SDK)/iop/irx/
 IRXTAG = $(notdir $(addsuffix _irx, $(basename $<)))
