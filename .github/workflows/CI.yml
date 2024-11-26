@@ -24,9 +24,9 @@ jobs:
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: DONGLE_DUMPER
+          name: KEKFBINDER_TEST
           path: |
-            DONGLE_DUMPER.ELF
+            *.ELF
 
       - name: Create release
         if: github.ref == 'refs/heads/main'
@@ -37,4 +37,4 @@ jobs:
           tag_name: "latest"
           body: "![dl](https://img.shields.io/github/downloads/israpps/system2x6-dongle-dumper/latest/total?style=for-the-badge&logo=github)"
           files: |
-            DONGLE_DUMPER.ELF
+            *.ELF
