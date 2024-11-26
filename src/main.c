@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
     sio_puts("> mechaemu update binder\n> BuilDate: "__DATE__ " " __TIME__ "\n");
     while (!SifIopRebootBuffer(ioprp, size_ioprp)) {}; // we need homebrew FILEIO
     sio_puts("> Waiting for SifIopSync()");
+    memset(ROMVER, 0, sizeof(ROMVER));
     while (!SifIopSync()) {}; // wait for IOP to reboot
     sio_puts("> startup services");
     SifInitIopHeap(); // Initialize SIF services for loading modules and files.
@@ -87,7 +88,6 @@ int main(int argc, char** argv) {
     scr_setCursor(0);
     sleep(2);
     sio_puts("> pull romver");
-    memset(ROMVER, 0, sizeof(ROMVER));
     GetRomName(ROMVER);
     //scr_printf("\tConsole model: %s\n", ModelNameGet());
     //scr_printf("\tConsole ID:    0x%x\n", getConsoleID());
@@ -103,7 +103,11 @@ LOADMODULE(ppctty_irx, NULL);
 LOADMODULE(ps2dev9_irx, NULL);
 LOADMODULE(udptty_standalone_irx, NULL);
 #endif
-    scr_printf(".\n\t ============ OG Card Tester ============\n");
+const char* title = " OG Card Tester ";
+    scr_printf(".\n");
+    for (int x=0; x<(80-strlen(title))/2;x++) scr_printf("=");
+    scr_printf("%s", title);
+    for (int x=0; x<(80-strlen(title))/2;x++) scr_printf("=");
     scr_printf("\tCoded by El_isra\n");
     //scr_printf("\thttps://github.com/israpps/system2x6-dongle-dumper\n");
     scr_printf("\tConsole ROMVER:        %s\n", ROMVER);
@@ -200,37 +204,38 @@ int loadmodulemc() {
     mcInit(MC_TYPE_XMC);
     for (int i = 0; i < 2; i++)
     {
+        scr_setfontcolor(0xFFFFFF);
         scr_printf("\n\n\tmc%d: ", i );
         int a = 1;
         int mcformatted= MC_UNFORMATTED, mctype = sceMcTypeNoCard, mcfreeSpace = 0, ret;
         mcGetInfo(i, 0, &mctype, &mcfreeSpace, &mcformatted);
         mcSync(0, NULL, &ret);
-        scr_setfontcolor(0xFFFFFF);
 
 
         if (mctype != sceMcTypePS2 ) {scr_setfontcolor(0x0000CC); a=0;}
         usleep(rand()%600000);
-        scr_printf("CardType:%d ", mctype );
+        scr_printf("CardType:%d ", mctype);
         scr_setfontcolor(0xFFFFFF);
         usleep(rand()%600000);
         scr_printf("FreeSpace:%04d ", mcfreeSpace );
-        if (mcformatted != MC_FORMATTED ) {scr_setfontcolor(0x0000CC); a=0;}
+        if (mcformatted != MC_FORMATTED) {scr_setfontcolor(0x0000CC); a=0;}
         usleep(rand()%600000);
-        scr_printf("Formatted:%d\n", mcformatted);
-        usleep(rand()%600000);
+        scr_printf("Formatted:%d ", mcformatted);
+        scr_printf("McSync:%d\n", ret);
         if (a) {
             scr_setfontcolor(0x00FF00);
             scr_printf("\t\tThe card was successfully authenticated with developer magicgate\n");
         } else {
             scr_setfontcolor(0x0000CC);
-            scr_printf("\t\tCannot auth card with dev keys.\n\t\t\tCard is bootleg or maybe arcade/prototype card\n");
+            if (ret == -11) scr_printf("\t\tNo memory card connected?\n");
+            else 
+            scr_printf("\t\tCould not auth card with developer magicgate. card might not be OG\n");
         }
     
     }
     
     return 0;
     nocard:
-    scr_printf("\tCannot auth card with dev keys\n\tCard is bootleg...\n\tOr maybe arcade/prototype card\n");
     scr_setfontcolor(0xFFFFFF);
     return -1;
 }
