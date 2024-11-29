@@ -249,16 +249,17 @@ int loadmodulemc() {
     int mcformatted= MC_UNFORMATTED, mctype, mcfreeSpace, ret;
     mcGetInfo(MCPORT, 0, &mctype, &mcfreeSpace, &mcformatted);
     mcSync(0, NULL, &ret);
+
     scr_setfontcolor(0xFFFFFF);
-    
     scr_printf("\tmc%d: ", MCPORT );
     if (mctype != sceMcTypePS2 ) scr_setfontcolor(0x0000CC);
     scr_printf("CardType:%d ", mctype );
     scr_setfontcolor(0xFFFFFF);
     scr_printf("FreeSpace:%d ", mcfreeSpace );
     if (mcformatted != MC_FORMATTED ) scr_setfontcolor(0x0000CC);
-    scr_printf("Formatted:%d\n", mcformatted);
+    scr_printf("Formatted:%d", mcformatted);
     scr_setfontcolor(0xFFFFFF);
+    scr_printf("McSync:%d\n", ret);
     return 0;
 }
 
@@ -301,7 +302,7 @@ void get_Kc(const void *buffer, void *Kc)
     
 }
 void hexdump (const char* name, unsigned char* buf, int size) {
-    scr_printf("\t%s:", name);
+    scr_printf("\t%-5s:", name);
     for (int i = 0; i < size; i++)
     {
         scr_printf("%02X ", buf[i]);
