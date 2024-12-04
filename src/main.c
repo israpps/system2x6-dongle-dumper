@@ -28,7 +28,16 @@
 #include <malloc.h>
 #include <sys/stat.h>
 #include <libmc.h>
+#include <libpad.h>
+#include <errno.h>
 #include "mechaemu_rpc.h"
+
+static char pad_state[256] __attribute__((aligned(64)));
+static int pad_buttons_raw = 0;
+static int pad_buttons_current = 0;
+static int pad_buttons_previous = 0;
+int PollPadState(int port, int slot);
+
 void get_Kc(const void *buffer, void *Kc);
 void get_Kbit(const void *buffer, void *Kbit);
 void hexdump (const char* name, unsigned char* buf, int size);
@@ -39,7 +48,7 @@ typedef struct {
     int ret;
 } modinfo_t;
 
-modinfo_t sio2man, mcman, mcserv, usbd, bdm, fatfs, usbmass, genvmc, fileXio, iomanX, secrsif_mechaemu;
+modinfo_t sio2man, mcman, mcserv, padman, usbd, bdm, fatfs, usbmass, genvmc, fileXio, iomanX, secrsif_mechaemu;
 #define EXTERN_MODULE(_irx) extern unsigned char _irx[]; extern unsigned int size_##_irx
 EXTERN_MODULE(ioprp);
 EXTERN_MODULE(usbd_irx);
@@ -51,6 +60,7 @@ EXTERN_MODULE(fileXio_irx);
 EXTERN_MODULE(iomanX_irx);
 EXTERN_MODULE(sio2man_irx);
 EXTERN_MODULE(mcman_irx);
+EXTERN_MODULE(padman_irx);
 EXTERN_MODULE(mcserv_irx);
 EXTERN_MODULE(secrsif_mechaemu_irx);
 #if TTY == 1
@@ -62,7 +72,7 @@ EXTERN_MODULE(udptty_standalone_irx);
 #define LOADMODULE(_irx, ret) SifExecModuleBuffer(&_irx, size_##_irx, 0, NULL, ret)
 #define LOADMODULEFILE(path, ret) SifLoadStartModule(path, 0, NULL, ret)
 #define MODULE_OK(id, ret) (id >= 0 && ret != 1)
-#define INFORM(x) scr_setfontcolor(MODULE_OK(x.id, x.ret) ? 0x00cc00 : 0x0000cc);scr_printf(" %s: id:%d ret:%d - %-8s ", #x, x.id, x.ret, MODULE_OK(x.id, x.ret) ? "OK\r" : "ERR\n"); usleep(600000);
+#define INFORM(x) scr_setfontcolor(MODULE_OK(x.id, x.ret) ? 0x00cc00 : 0x0000cc);scr_printf(" %s: id:%d ret:%d - %-8s ", #x, x.id, x.ret, MODULE_OK(x.id, x.ret) ? "OK\r" : "ERR\n"); //usleep(600000);
 int loadusb();
 
 char ROMVER[15];
@@ -70,11 +80,110 @@ int loadmodulemc();
 #define MCPORT 0
 unsigned char Kbit[16], Kc[16];
 unsigned char BKbit[16], BKc[16];
+
+void scr_fillhalf(int size, char filler) {
+    for (int x=0; x<(80-size)/2;x++) scr_printf("%c", filler);
+}
+
+void scr_centerputs(const char* buf, char fillerbyte) {
+    scr_fillhalf(strlen(buf), fillerbyte);
+    scr_printf("%s", buf);
+    scr_fillhalf(strlen(buf), fillerbyte);
+    if(strlen(buf) % 2 != 0) scr_printf("\n");
+}
+
+void PrintHeading() {
+    scr_printf("\n\n");
+    scr_centerputs(" MECHAEMU Update binder ", '=');
+    scr_centerputs("coded by El_isra", ' ');
+}
+
+const char* UNBOUND = "boot.kelf";
+char* BOUND = "mc0:boot.bin";
+int BindKelf(int port, const char* input, const char* output) {
+    int result;
+    BOUND[2] = '0' + port;
+    scr_setfontcolor(0xFFFFFF);
+    scr_printf("\n"); 
+    uint8_t* buf;
+    
+    int is_ok = 1;
+    scr_printf("Checking card.");
+    int mcformatted= MC_UNFORMATTED, mctype, mcfreeSpace, ret;
+    mcGetInfo(port, 0, &mctype, &mcfreeSpace, &mcformatted);
+    scr_printf(".");
+    mcSync(0, NULL, &ret);
+    scr_printf(".\n");
+    if (mctype != sceMcTypePS2 ) is_ok = 0;
+    if (mcformatted != MC_FORMATTED ) is_ok = 0;
+    scr_printf("\tmc%d: %d-%d-%d-%d %s\n", port , mctype, mcfreeSpace, mcformatted, ret, (is_ok) ? "OK" : "ERR");
+    if (!is_ok) {
+        scr_printf("\tError detecting card!\n");
+        return ENOENT;
+    }
+    int fd = open(input, O_RDONLY);
+    
+    if (fd < 0) {
+        scr_printf("\tcant open '%s' (%d %s)...\n", input, fd, strerror(fd));
+        return ENOENT;
+    }
+    int size = lseek(fd, 0, SEEK_END);
+    scr_printf("\tKELF size is %d\n", size); 
+    if (size < 0 || size >= ((mcfreeSpace+2)*1024)) {
+        scr_printf("\tNot enough space on card! kelfsize:%d  CardSpace:%d\n", size, ((mcfreeSpace+2)*1024));
+        return EINVAL;
+    }
+    lseek(fd, 0, SEEK_SET);
+    if ((buf = memalign(64, size)) != NULL) {
+        if ((read(fd, buf, size)) != size) {
+            close(fd);
+            scr_printf("\tI/O ERROR. Cannot read input KELF\n"); 
+            result = EIO;
+        } else {
+            get_Kbit(buf, Kbit);
+            get_Kc(buf, Kc);
+            scr_printf("Unbound: \n"); 
+            scr_setfontcolor(0x00FFFF); hexdump("Kbit", Kbit, 16); hexdump("Kc", Kc, 16); scr_setfontcolor(0xFFFFFF);
+            scr_printf("\tBinding update to memory card on mc%d:\n", port);
+            result = mechaemu_downloadfile(port + 2, 0, buf);
+            if (result) {
+                scr_printf("\tBinding complete\n");
+                get_Kbit(buf, BKbit);
+                get_Kc(buf, BKc);
+                scr_printf("Bound:   \n"); scr_setfontcolor(0x00FFFF); hexdump("Kbit", BKbit, 16); hexdump("Kc", BKc, 16); scr_setfontcolor(0xFFFFFF);
+                scr_printf( "writing KELF to '%s'\n", output);
+                int outfd = open(output, O_WRONLY | O_CREAT | O_TRUNC);
+                if (outfd >= 0)
+                {
+                    int written = write(outfd, buf, size);
+                    if (written != size) {
+                        scr_printf("\tI/O ERROR Writing output KELF\n");
+                        result = EIO;
+                    } else {scr_printf("\tSuccess!");}
+                    close(outfd);
+                } else {
+                    scr_printf("\tCannot open output path %d\n", outfd);
+                    result = EIO;
+                }
+            } else {
+                scr_printf("\tmechaemu_downloadfile(%d, 0): error\n", port);
+                result = EINVAL;
+            }
+        }
+    } else {
+        close(fd);
+        scr_printf("\tcannot allocate %d bytes\n", size);
+        result = ENOMEM;
+    }
+    return result;
+}
+
 int main(int argc, char** argv) {
     sio_puts("> mechaemu update binder\n> BuilDate: "__DATE__ " " __TIME__ "\n");
-    while (!SifIopRebootBuffer(ioprp, size_ioprp)) {}; // we need homebrew FILEIO
+    while (!SifIopRebootBuffer(ioprp, size_ioprp)) {}; // replace SECRMAN with ours
     sio_puts("> Waiting for SifIopSync()");
-    while (!SifIopSync()) {}; // wait for IOP to reboot
+    memset(ROMVER, 0, sizeof(ROMVER)); // to squeze boot time. code that does not depend on IOP goes here
+    while (!SifIopSync()) {}; // wait for IOP to be ready
     sio_puts("> startup services");
     SifInitIopHeap(); // Initialize SIF services for loading modules and files.
     SifLoadFileInit();
@@ -84,7 +193,6 @@ int main(int argc, char** argv) {
     scr_setCursor(0);
     sleep(2);
     sio_puts("> pull romver");
-    memset(ROMVER, 0, sizeof(ROMVER));
     GetRomName(ROMVER);
     //scr_printf("\tConsole model: %s\n", ModelNameGet());
     //scr_printf("\tConsole ID:    0x%x\n", getConsoleID());
@@ -100,8 +208,7 @@ LOADMODULE(ppctty_irx, NULL);
 LOADMODULE(ps2dev9_irx, NULL);
 LOADMODULE(udptty_standalone_irx, NULL);
 #endif
-    scr_printf(".\n\t ===== MECHAEMU Update binder =====\n");
-    scr_printf("\tCoded by El_isra. genvmc module borrowed from OPL\n");
+    PrintHeading();
     //scr_printf("\thttps://github.com/israpps/system2x6-dongle-dumper\n");
     scr_printf("\tROMVER:        %s\n", ROMVER);
     //ModelNameInit();
@@ -123,72 +230,47 @@ LOADMODULE(udptty_standalone_irx, NULL);
         scr_printf("\nConnecting to filexio.irx...\r");
         fileXioInit();
     } else {
-        scr_printf("\n\tFailed to load fileXio. aborting dump...\n");
+        scr_printf("\n\tFailed to load fileXio. aborting...\n");
         goto brk;
     }
     if (loadmodulemc() == 0) {
-        scr_setfontcolor(0xFFFFFF);
-        scr_printf("\n"); 
-        uint8_t* buf;
-        const char* UNBOUND = "UNBOUND.KELF";
-        const char* BOUND = "BOUND.KELF";
-        int fd = open(UNBOUND, O_RDONLY);
-        
-        if (fd < 0) {
-            scr_printf("\tcant open '%s' (%d %s)...\n", UNBOUND, fd, strerror(fd));
-            goto brk;
-        }
-        int size = lseek(fd, 0, SEEK_END);
-        scr_printf("\tKELF size is %d\n", size); 
-        if (size < 0) {
-            goto brk;
-        }
-        lseek(fd, 0, SEEK_SET);
-        if ((buf = memalign(64, size)) != NULL) {
-            if ((read(fd, buf, size)) != size) {
-                close(fd);
-                scr_printf("\tcannot read whole KELF: %d bytes\n", size); 
-                goto brk;
-            } else {
-                get_Kbit(buf, Kbit);
-                get_Kc(buf, Kc);
-                scr_printf("Unbound: \n"); hexdump("Kbit", Kbit, 16); hexdump("Kc", Kc, 16);
-                scr_printf("\tBinding update to memory card on mc%d:\n", MCPORT);
-                int result = mechaemu_downloadfile(MCPORT + 2, 0, buf);
-                if (result) {
-                    scr_printf("\tBinding complete\n");
-                    get_Kbit(buf, BKbit);
-                    get_Kc(buf, BKc);
-                    scr_printf("Bound: \n"); hexdump("Kbit", BKbit, 16); hexdump("Kc", BKc, 16);
-                    scr_printf( "writing KELF to '%s'\n", BOUND);
-                    int outfd = open(BOUND, O_WRONLY | O_CREAT | O_TRUNC);
-                    if (outfd >= 0)
-                    {
-                        int written = write(outfd, buf, size);
-                        if (written != size) {
-                            scr_printf("\tI/O ERROR Writing output KELF\n");
-                            result = -EIO;
-                        }
-                        close(outfd);
-                    } else {
-                        scr_printf("\tmechaemu_downloadfile(%d, 0): error\n", MCPORT);
-                        result = -EIO;
-                    }
-
-                } else {
-                    scr_printf("\tmechaemu_downloadfile(%d, 0): error\n", MCPORT);
-                    goto brk;
+        int scrc = 1, port = 0;
+        while (1)
+        {
+            if (scrc) {
+                const char* fm = "target: 'mc%d:'\n";
+                scr_clear(); scr_setfontcolor(0xFFFFFF);
+                PrintHeading();
+                scr_centerputs("START: Bind Update | SELECT: Exit program", ' ');
+                scr_centerputs("Press O to Change target card slot", ' ');
+                scr_centerputs("--", '-');
+                scr_fillhalf(strlen(fm), ' '); scr_printf("  ");scr_printf(fm, port);
+                scrc = 0;
+            }
+            int pollInput = 1;
+            while (pollInput != 0) {
+                if (PollPadState(0, 0) != 0) {
+                    pollInput = 0;
+                    if ((pad_buttons_current & PAD_START) != 0) {
+                        if (BindKelf(port, UNBOUND, BOUND) != 0) sleep(4);
+                         sleep(5);
+                        scrc = 1;
+                    } else if ((pad_buttons_current & PAD_CIRCLE) != 0) {
+                        port ^= 1;
+                        scrc = 1;
+                    } else if ((pad_buttons_current & PAD_SELECT) != 0) {
+                        sleep(2);
+                        goto brk_notime;
+                    } else
+                        pollInput = 1;
                 }
             }
-        } else {
-            close(fd);
-            scr_printf("\tcannot allocate %d bytes\n", size);
-            goto brk;
         }
     }
     brk:
     scr_printf("Program execution end. exiting to OSDSYS in 2 minutes\n");
     sleep(120);
+    brk_notime:
     return 0;
 tosleep:
     SleepThread();
@@ -245,21 +327,18 @@ int loadmodulemc() {
         return -1;
     }
     mcInit(MC_TYPE_XMC);
-
-    int mcformatted= MC_UNFORMATTED, mctype, mcfreeSpace, ret;
-    mcGetInfo(MCPORT, 0, &mctype, &mcfreeSpace, &mcformatted);
-    mcSync(0, NULL, &ret);
-
-    scr_setfontcolor(0xFFFFFF);
-    scr_printf("\tmc%d: ", MCPORT );
-    if (mctype != sceMcTypePS2 ) scr_setfontcolor(0x0000CC);
-    scr_printf("CardType:%d ", mctype );
-    scr_setfontcolor(0xFFFFFF);
-    scr_printf("FreeSpace:%d ", mcfreeSpace );
-    if (mcformatted != MC_FORMATTED ) scr_setfontcolor(0x0000CC);
-    scr_printf("Formatted:%d", mcformatted);
-    scr_setfontcolor(0xFFFFFF);
-    scr_printf("McSync:%d\n", ret);
+    padman.id = LOADMODULE(padman_irx, &padman.ret);
+    INFORM(padman);
+    if (!MODULE_OK(padman.id, padman.ret)) {
+        return -1;
+    }
+    padInit(0);
+    int ret;
+    if ((ret = padPortOpen(0, 0, pad_state)) == 0) {
+        // Failed to open pad port.
+        scr_printf("Failed to open pad port 0: %d\n", ret);
+        return -1;
+    }
     return 0;
 }
 
@@ -301,6 +380,7 @@ void get_Kc(const void *buffer, void *Kc)
     memcpy(Kc, (void *)kc_offset, 16);
     
 }
+
 void hexdump (const char* name, unsigned char* buf, int size) {
     scr_printf("\t%-5s:", name);
     for (int i = 0; i < size; i++)
@@ -310,4 +390,24 @@ void hexdump (const char* name, unsigned char* buf, int size) {
     scr_printf("\n");
     
 }
-//LIBCGLUE_SUPPORT_NAMCO_SYSTEM_2x6();
+
+// DMA buffer for pad input state:
+int PollPadState(int port, int slot)
+{
+    struct padButtonStatus buttons;
+    // Wait until the pad is ready.
+    int state = padGetState(port, slot);
+    while (state != PAD_STATE_STABLE && state != PAD_STATE_FINDCTP1 && state != PAD_STATE_DISCONN) {
+        // Retry polling...
+        state = padGetState(port, slot);
+    }
+    // Get pad input state.
+    state = padRead(0, 0, &buttons);
+    if (state != 0) {
+        // Update button state.
+        pad_buttons_raw = 0xFFFF ^ buttons.btns;
+        pad_buttons_current = pad_buttons_raw & ~pad_buttons_previous;
+        pad_buttons_previous = pad_buttons_raw;
+    }
+    return state;
+}

@@ -26,15 +26,4 @@ jobs:
         with:
           name: KEKFBINDER_TEST
           path: |
-            *.ELF
-
-      - name: Create release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: true
-          generate_release_notes: true
-          tag_name: "latest"
-          body: "![dl](https://img.shields.io/github/downloads/israpps/system2x6-dongle-dumper/latest/total?style=for-the-badge&logo=github)"
-          files: |
-            *.ELF
+            KELF_BINDER*.ELF
