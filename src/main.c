@@ -30,7 +30,16 @@
 #include <malloc.h>
 #include <sys/stat.h>
 #include <libmc.h>
+#include <libpad.h>
 #include "mechaemu_rpc.h"
+
+
+static char pad_state[256] __attribute__((aligned(64)));
+static int pad_buttons_raw = 0;
+static int pad_buttons_current = 0;
+static int pad_buttons_previous = 0;
+int PollPadState(int port, int slot);
+
 void get_Kc(const void *buffer, void *Kc);
 void get_Kbit(const void *buffer, void *Kbit);
 void hexdump (const char* name, unsigned char* buf, int size);
@@ -41,7 +50,7 @@ typedef struct {
     int ret;
 } modinfo_t;
 
-modinfo_t sio2man, mcman, mcserv, usbd, bdm, fatfs, usbmass, genvmc, fileXio, iomanX, secrsif_mechaemu;
+modinfo_t sio2man, mcman, mcserv, padman, usbd, bdm, fatfs, usbmass, genvmc, fileXio, iomanX, secrsif_mechaemu;
 #define EXTERN_MODULE(_irx) extern unsigned char _irx[]; extern unsigned int size_##_irx
 EXTERN_MODULE(ioprp);
 EXTERN_MODULE(usbd_irx);
@@ -52,6 +61,7 @@ EXTERN_MODULE(genvmc_irx);
 EXTERN_MODULE(fileXio_irx);
 EXTERN_MODULE(iomanX_irx);
 EXTERN_MODULE(sio2man_irx);
+EXTERN_MODULE(padman_irx);
 EXTERN_MODULE(mcman_irx);
 EXTERN_MODULE(mcserv_irx);
 EXTERN_MODULE(secrsif_mechaemu_irx);
@@ -73,9 +83,53 @@ int loadmodulemc();
 #define MCPORT 0
 unsigned char Kbit[16], Kc[16];
 unsigned char BKbit[16], BKc[16];
+void scr_centerputs(const char* buf, char fillerbyte) {
+    for (int x=0; x<(80-strlen(buf))/2;x++) scr_printf("%c", fillerbyte);
+    scr_printf("%s", buf);
+    for (int x=0; x<(80-strlen(buf))/2;x++) scr_printf("%c", fillerbyte);
+}
+
+int cardtest() {
+    int ret = 0x0;
+    for (int i = 0; i < 2; i++)
+    {
+        scr_setfontcolor(0xFFFFFF);
+        scr_printf("\n\n\tmc%d: ", i );
+        int a = 1;
+        int mcformatted= MC_UNFORMATTED, mctype = sceMcTypeNoCard, mcfreeSpace = 0, ret;
+        mcGetInfo(i, 0, &mctype, &mcfreeSpace, &mcformatted);
+        mcSync(0, NULL, &ret);
+        usleep(rand()%600000);
+
+
+        if (mctype != sceMcTypePS2 ) {scr_setfontcolor(0x0000CC); a=0;}
+        scr_printf("CardType:%d ", mctype);
+        scr_setfontcolor(0xFFFFFF);
+        //usleep(rand()%600000);
+        scr_printf("FreeSpace:%04d ", mcfreeSpace );
+        if (mcformatted != MC_FORMATTED) {scr_setfontcolor(0x0000CC); a=0;}
+        //usleep(rand()%600000);
+        scr_printf("Formatted:%d ", mcformatted);
+        scr_setfontcolor(0xFFFFFF);
+        scr_printf("McSync:%d\n", ret);
+        if (a) {
+            scr_setfontcolor(0x00FF00);
+            scr_printf("\t\tThe card was successfully authenticated with developer magicgate\n");
+            ret |= (1 << i);
+        } else {
+            scr_setfontcolor(0x0000CC);
+            //if (ret == -11) scr_printf("\t\tNo memory card connected?\n");
+            //else 
+            scr_printf("\t\tCould not auth card with developer magicgate. card might not be OG\n");
+        }
+
+    }
+    return ret;
+}
+
 int main(int argc, char** argv) {
     sio_puts("> mechaemu update binder\n> BuilDate: "__DATE__ " " __TIME__ "\n");
-    while (!SifIopRebootBuffer(ioprp, size_ioprp)) {}; // we need homebrew FILEIO
+    while (!SifIopRebootBuffer(ioprp, size_ioprp)) {}; // install SECRMAN MECHAEMU
     sio_puts("> Waiting for SifIopSync()");
     memset(ROMVER, 0, sizeof(ROMVER));
     while (!SifIopSync()) {}; // wait for IOP to reboot
@@ -104,13 +158,11 @@ LOADMODULE(ps2dev9_irx, NULL);
 LOADMODULE(udptty_standalone_irx, NULL);
 #endif
 const char* title = " OG Card Tester ";
-    scr_printf(".\n");
-    for (int x=0; x<(80-strlen(title))/2;x++) scr_printf("=");
-    scr_printf("%s", title);
-    for (int x=0; x<(80-strlen(title))/2;x++) scr_printf("=");
+    scr_printf(" \n");
+    scr_centerputs(title, '=');
     scr_printf("\tCoded by El_isra\n");
     //scr_printf("\thttps://github.com/israpps/system2x6-dongle-dumper\n");
-    scr_printf("\tConsole ROMVER:        %s\n", ROMVER);
+    scr_printf("\tConsole ROMVER:        %s\n\n\n", ROMVER);
     //ModelNameInit();
     smod_mod_info_t* info = GetIRXInfoByName("secrman_nomecha");
     if (info == NULL) {
@@ -119,34 +171,48 @@ const char* title = " OG Card Tester ";
         goto brk;
         
     }
-
-
-   // if (!loadusb()) goto tosleep;
-    
-    /*secrsif_mechaemu.id = LOADMODULE(secrsif_mechaemu_irx, &secrsif_mechaemu.ret);
-    INFORM(secrsif_mechaemu);
-    if (mechaemu_init()) {
-        scr_printf("\tCannot connect to secrsif_mechaemu.irx\n");
-        goto brk;
+    if (loadmodulemc()==0) {
+        scr_setfontcolor(0x00CCCC);
+        scr_centerputs("Unplug and replug the cards before running the test to reset their IC", ' '); scr_printf("\n");
+        scr_setfontcolor(0xFFFFFF);
+        scr_centerputs("Press start to run test", ' ');
+        while (1)
+        {
+            int pollInput = 1;
+            while (pollInput != 0) {
+                if (PollPadState(0, 0) != 0) {
+                    pollInput = 0;
+                    if ((pad_buttons_current & PAD_START) != 0) {
+                        scr_clear();
+                        scr_printf("\n");
+                        scr_centerputs(title, '=');
+                        scr_printf("\tCoded by El_isra\n");
+                         scr_printf("\n\n");
+                        cardtest();
+                        scr_setfontcolor(0xFFFFFF);
+                         scr_printf("\n\n");
+                        sleep(1);
+                        scr_centerputs("Press start to re-run test", ' ');
+                        scr_centerputs("Press X to exit to OSDSYS", ' ');
+                    } else if ((pad_buttons_current & PAD_CROSS) != 0) {
+                        sleep(2);
+                        goto brk_notime;
+                    } else
+                        pollInput = 1;
+                }
+            }
+        }
     }
-    iomanX.id = LOADMODULE(iomanX_irx, &iomanX.ret);
-    INFORM(iomanX);
-    fileXio.id = LOADMODULE(fileXio_irx, &fileXio.ret);
-    INFORM(fileXio);
-    if (MODULE_OK(fileXio.id, fileXio.ret)) {
-        scr_printf("\nConnecting to filexio.irx...\r");
-        fileXioInit();
-    } else {
-        scr_printf("\n\tFailed to load fileXio. aborting dump...\n");
-        goto brk;
-    }*/
-    loadmodulemc();
     brk:
     
         scr_setfontcolor(0xFFFFFF);
     scr_printf("\n\nProgram execution end. exiting to OSDSYS in 2 minutes\n");
     sleep(120);
-    return 0;
+    return 1;
+    brk_notime:
+    //while (!SifIopReset("", 0)) ;
+    //while (!SifIopSync()) ;
+    return 1;
 tosleep:
     SleepThread();
 }
@@ -202,36 +268,18 @@ int loadmodulemc() {
         return -1;
     }
     mcInit(MC_TYPE_XMC);
-    for (int i = 0; i < 2; i++)
-    {
-        scr_setfontcolor(0xFFFFFF);
-        scr_printf("\n\n\tmc%d: ", i );
-        int a = 1;
-        int mcformatted= MC_UNFORMATTED, mctype = sceMcTypeNoCard, mcfreeSpace = 0, ret;
-        mcGetInfo(i, 0, &mctype, &mcfreeSpace, &mcformatted);
-        mcSync(0, NULL, &ret);
-
-
-        if (mctype != sceMcTypePS2 ) {scr_setfontcolor(0x0000CC); a=0;}
-        usleep(rand()%600000);
-        scr_printf("CardType:%d ", mctype);
-        scr_setfontcolor(0xFFFFFF);
-        usleep(rand()%600000);
-        scr_printf("FreeSpace:%04d ", mcfreeSpace );
-        if (mcformatted != MC_FORMATTED) {scr_setfontcolor(0x0000CC); a=0;}
-        usleep(rand()%600000);
-        scr_printf("Formatted:%d ", mcformatted);
-        scr_printf("McSync:%d\n", ret);
-        if (a) {
-            scr_setfontcolor(0x00FF00);
-            scr_printf("\t\tThe card was successfully authenticated with developer magicgate\n");
-        } else {
-            scr_setfontcolor(0x0000CC);
-            if (ret == -11) scr_printf("\t\tNo memory card connected?\n");
-            else 
-            scr_printf("\t\tCould not auth card with developer magicgate. card might not be OG\n");
-        }
+    padman.id = LOADMODULE(padman_irx, &padman.ret);
+    INFORM(padman);
+    if (!MODULE_OK(padman.id, padman.ret)) {
+        return -1;
+    }
     
+    padInit(0);
+    int ret;
+    if ((ret = padPortOpen(0, 0, pad_state)) == 0) {
+        // Failed to open pad port.
+        scr_printf("Failed to open pad port 0: %d\n", ret);
+        return -1;
     }
     
     return 0;
@@ -307,4 +355,30 @@ smod_mod_info_t* GetIRXInfoByName(const char* name) {
         }
     }
     return NULL;
+}
+
+
+// DMA buffer for pad input state:
+
+int PollPadState(int port, int slot)
+{
+    struct padButtonStatus buttons;
+
+    // Wait until the pad is ready.
+    int state = padGetState(port, slot);
+    while (state != PAD_STATE_STABLE && state != PAD_STATE_FINDCTP1 && state != PAD_STATE_DISCONN) {
+        // Retry polling...
+        state = padGetState(port, slot);
+    }
+
+    // Get pad input state.
+    state = padRead(0, 0, &buttons);
+    if (state != 0) {
+        // Update button state.
+        pad_buttons_raw = 0xFFFF ^ buttons.btns;
+        pad_buttons_current = pad_buttons_raw & ~pad_buttons_previous;
+        pad_buttons_previous = pad_buttons_raw;
+    }
+
+    return state;
 }

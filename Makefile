@@ -8,7 +8,7 @@
 .SILENT:
 EE_BIN = CARDOGTEST.ELF
 
-EE_OBJS = $(addprefix src/,$(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu mcman mcserv sio2man))
+EE_OBJS = $(addprefix src/,$(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu mcman mcserv sio2man padman))
 
 TTY = PPC
 ifeq ($(TTY), PPC)
@@ -21,7 +21,7 @@ endif
 
 EE_CFLAGS += -fdata-sections -ffunction-sections -DNEWLIB_PORT_AWARE
 EE_LDFLAGS += -Wl,--gc-sections
-EE_LIBS += $(addprefix -l, iopreboot debug patches fileXio cdvd mc)
+EE_LIBS += $(addprefix -l, iopreboot debug patches fileXio cdvd mc padx)
 
 ifeq ($(DEBUG), 1)
   EE_CFLAGS += -DDEBUG -O0 -g
