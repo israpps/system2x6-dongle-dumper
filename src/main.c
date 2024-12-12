@@ -97,6 +97,8 @@ void PrintHeading() {
     scr_centerputs(" MECHAEMU Update binder ", '=');
     scr_centerputs("coded by El_isra", ' ');
 }
+void genericgaugepercent(int percent);
+void genericgauge (float progress);
 
 const char* UNBOUND = "boot.kelf";
 char* BOUND = "mc0:boot.bin";
@@ -118,7 +120,7 @@ int BindKelf(int port, const char* input, const char* output) {
     if (mcformatted != MC_FORMATTED ) is_ok = 0;
     scr_printf("\tmc%d: %d-%d-%d-%d %s\n", port , mctype, mcfreeSpace, mcformatted, ret, (is_ok) ? "OK" : "ERR");
     if (!is_ok) {
-        scr_printf("\tError detecting card!\n");
+        scr_printf("\tError detecting dongle!\n");
         return ENOENT;
     }
     int fd = open(input, O_RDONLY);
@@ -130,7 +132,7 @@ int BindKelf(int port, const char* input, const char* output) {
     int size = lseek(fd, 0, SEEK_END);
     scr_printf("\tKELF size is %d\n", size); 
     if (size < 0 || size >= ((mcfreeSpace+2)*1024)) {
-        scr_printf("\tNot enough space on card! kelfsize:%d  CardSpace:%d\n", size, ((mcfreeSpace+2)*1024));
+        scr_printf("\tNot enough space on dongle! kelfsize:%d  CardSpace:%d\n", size, ((mcfreeSpace+2)*1024));
         return EINVAL;
     }
     lseek(fd, 0, SEEK_SET);
@@ -144,7 +146,7 @@ int BindKelf(int port, const char* input, const char* output) {
             get_Kc(buf, Kc);
             scr_printf("Unbound: \n"); 
             scr_setfontcolor(0x00FFFF); hexdump("Kbit", Kbit, 16); hexdump("Kc", Kc, 16); scr_setfontcolor(0xFFFFFF);
-            scr_printf("\tBinding update to memory card on mc%d:\n", port);
+            scr_printf("\tBinding update to security Dongle on mc%d:\n", port);
             result = mechaemu_downloadfile(port + 2, 0, buf);
             if (result) {
                 scr_printf("\tBinding complete\n");
@@ -410,4 +412,28 @@ int PollPadState(int port, int slot)
         pad_buttons_previous = pad_buttons_raw;
     }
     return state;
+}
+
+void genericgauge (float progress)
+{
+    int barWidth = 70;
+
+    scr_printf("[");
+    int pos = barWidth * progress;
+    for (int i = 0; i < barWidth; ++i)
+	{
+	  if (i < pos)
+        scr_printf("=");
+	  else if (i == pos)
+        scr_printf(">");
+	  else
+        scr_printf(" ");
+	}
+    
+    scr_printf("]\r");
+}
+
+//percentage represented on signed integer. values from 0-100
+void genericgaugepercent(int percent) {
+    genericgauge(percent*0.01);
 }
