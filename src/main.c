@@ -437,3 +437,10 @@ void genericgauge (float progress)
 void genericgaugepercent(int percent) {
     genericgauge(percent*0.01);
 }
+void bottomgauge(int percent) {
+    int X = scr_getX(), Y = scr_getY();
+    scr_setXY(0, 25);
+    scr_setfontcolor(0xFFFFFF);
+    genericgauge(percent*0.01);
+    scr_setXY(X, Y);
+}
