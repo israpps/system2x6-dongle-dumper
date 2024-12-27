@@ -7,11 +7,12 @@
 # security dongle dumper for PlayStation2 based namco system 246/256
 .SILENT:
 MGKEY ?= ARCADE
-EE_BIN = KELF_BINDER_$(MGKEY).ELF
+EE_BIN = UNC_$(EE_BIN_PKD)
+EE_BIN_PKD = DONGLEBINDER.ELF
 
 EE_OBJS = $(addprefix src/,$(addsuffix .o, main downloadfile ioprp usbd bdm bdmfs_fatfs usbmass_bd fileXio iomanX secrsif_mechaemu mcman mcserv padman sio2man))
 
-TTY = PPC
+TTY = UDP
 ifeq ($(TTY), PPC)
 EE_OBJS += src/ppctty.o
 EE_CFLAGS += -DTTY=1
@@ -31,13 +32,19 @@ else
   EE_LDFLAGS += -s
 endif
 
-all: $(EE_BIN)
-	$(info $(EE_BIN): built)
+all: $(EE_BIN_PKD)
+
+rel: $(EE_BIN_PKD) 
+	rm -f DONGLEBINDER.zip
+	zip DONGLEBINDER.zip $< README.MD LICENSE
+
+$(EE_BIN_PKD): $(EE_BIN)
+	ps2-packer $< $@
 
 clean:
 	rm -rf $(EE_OBJS) $(EE_BIN) src/ioprp.c
 
-.INTERMEDIATE: src/ioprp.c
+.INTERMEDIATE: src/ioprp.c $(EE_OBJS)
 src/ioprp.c: IOPRP_$(MGKEY).IMG
 	bin2c $< $@ ioprp
 

@@ -42,6 +42,7 @@ void get_Kc(const void *buffer, void *Kc);
 void get_Kbit(const void *buffer, void *Kbit);
 void hexdump (const char* name, unsigned char* buf, int size);
 
+int exist(char *filepath);
 
 typedef struct {
     int id;
@@ -99,6 +100,8 @@ void PrintHeading() {
 }
 void genericgaugepercent(int percent);
 void genericgauge (float progress);
+void bottomgauge(int percent);
+void ClearGauge(void);
 
 const char* UNBOUND = "boot.kelf";
 char* BOUND = "mc0:boot.bin";
@@ -108,21 +111,24 @@ int BindKelf(int port, const char* input, const char* output) {
     scr_setfontcolor(0xFFFFFF);
     scr_printf("\n"); 
     uint8_t* buf;
+    bottomgauge(0);
     
     int is_ok = 1;
     scr_printf("Checking card.");
-    int mcformatted= MC_UNFORMATTED, mctype, mcfreeSpace, ret;
+    int mcformatted = MC_UNFORMATTED, mctype = 0, mcfreeSpace = 0, ret;
     mcGetInfo(port, 0, &mctype, &mcfreeSpace, &mcformatted);
+    bottomgauge(10);
     scr_printf(".");
     mcSync(0, NULL, &ret);
     scr_printf(".\n");
     if (mctype != sceMcTypePS2 ) is_ok = 0;
     if (mcformatted != MC_FORMATTED ) is_ok = 0;
-    scr_printf("\tmc%d: %d-%d-%d-%d %s\n", port , mctype, mcfreeSpace, mcformatted, ret, (is_ok) ? "OK" : "ERR");
+    scr_printf("\tmc%d: %d,%d,%d,%d %s\n", port , mctype, mcfreeSpace, mcformatted, ret, (is_ok) ? "OK" : "ERR");
     if (!is_ok) {
         scr_printf("\tError detecting dongle!\n");
         return ENOENT;
     }
+    bottomgauge(20);
     int fd = open(input, O_RDONLY);
     
     if (fd < 0) {
@@ -137,17 +143,21 @@ int BindKelf(int port, const char* input, const char* output) {
     }
     lseek(fd, 0, SEEK_SET);
     if ((buf = memalign(64, size)) != NULL) {
+        bottomgauge(30);
         if ((read(fd, buf, size)) != size) {
             close(fd);
             scr_printf("\tI/O ERROR. Cannot read input KELF\n"); 
             result = EIO;
         } else {
+            bottomgauge(40);
             get_Kbit(buf, Kbit);
             get_Kc(buf, Kc);
             scr_printf("Unbound: \n"); 
             scr_setfontcolor(0x00FFFF); hexdump("Kbit", Kbit, 16); hexdump("Kc", Kc, 16); scr_setfontcolor(0xFFFFFF);
             scr_printf("\tBinding update to security Dongle on mc%d:\n", port);
+            bottomgauge(50);
             result = mechaemu_downloadfile(port + 2, 0, buf);
+            bottomgauge(60);
             if (result) {
                 scr_printf("\tBinding complete\n");
                 get_Kbit(buf, BKbit);
@@ -157,12 +167,14 @@ int BindKelf(int port, const char* input, const char* output) {
                 int outfd = open(output, O_WRONLY | O_CREAT | O_TRUNC);
                 if (outfd >= 0)
                 {
+                    bottomgauge(70);
                     int written = write(outfd, buf, size);
                     if (written != size) {
                         scr_printf("\tI/O ERROR Writing output KELF\n");
                         result = EIO;
-                    } else {scr_printf("\tSuccess!");}
+                    } else {bottomgauge(80); scr_printf("\tSuccess!");}
                     close(outfd);
+                    bottomgauge(90);
                 } else {
                     scr_printf("\tCannot open output path %d\n", outfd);
                     result = EIO;
@@ -177,6 +189,7 @@ int BindKelf(int port, const char* input, const char* output) {
         scr_printf("\tcannot allocate %d bytes\n", size);
         result = ENOMEM;
     }
+    bottomgauge(100);
     return result;
 }
 
@@ -214,7 +227,12 @@ LOADMODULE(udptty_standalone_irx, NULL);
     //scr_printf("\thttps://github.com/israpps/system2x6-dongle-dumper\n");
     scr_printf("\tROMVER:        %s\n", ROMVER);
     //ModelNameInit();
-
+    for (int i = 0; i < 100; i += rand()%10)
+    {
+        bottomgauge(i);
+        usleep(rand()%400000);
+    }
+    
 
     if (!loadusb()) goto tosleep;
     
@@ -414,6 +432,22 @@ int PollPadState(int port, int slot)
     return state;
 }
 
+
+int exist(char *filepath)
+{
+    if (filepath == NULL)
+        return 0;
+    int fdn;
+
+    fdn = open(filepath, O_RDONLY);
+    if (fdn < 0)
+        return 0;
+
+    close(fdn);
+
+    return 1;
+}
+
 void genericgauge (float progress)
 {
     int barWidth = 70;
@@ -437,10 +471,15 @@ void genericgauge (float progress)
 void genericgaugepercent(int percent) {
     genericgauge(percent*0.01);
 }
+
+#define GAUGELINE 25
 void bottomgauge(int percent) {
     int X = scr_getX(), Y = scr_getY();
-    scr_setXY(0, 25);
+    scr_setXY(0, GAUGELINE);
     scr_setfontcolor(0xFFFFFF);
     genericgauge(percent*0.01);
     scr_setXY(X, Y);
+}
+void ClearGauge(void) {
+    scr_clearline(GAUGELINE);
 }
