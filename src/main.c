@@ -110,7 +110,7 @@ int BindKelf(int port, const char* input, const char* output) {
     BOUND[2] = '0' + port;
     scr_setfontcolor(0xFFFFFF);
     scr_printf("\n"); 
-    uint8_t* buf;
+    uint8_t* buf = NULL;
     bottomgauge(0);
     
     int is_ok = 1;
@@ -189,6 +189,7 @@ int BindKelf(int port, const char* input, const char* output) {
         scr_printf("\tcannot allocate %d bytes\n", size);
         result = ENOMEM;
     }
+	if (buf) free(buf);
     bottomgauge(100);
     return result;
 }
