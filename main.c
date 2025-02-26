@@ -21,10 +21,26 @@
 #include <sio.h>
 #include <debug.h>
 #include <sbv_patches.h>
+#include <libmc.h>
 #include <ps2sdkapi.h>
 #include <string.h>
 #include <sys/stat.h>
 #include "genvmc.h"
+#include "pad.h"
+
+
+#include <smem.h>
+#include <smod.h>
+smod_mod_info_t* GetIRXInfoByName(const char* name);
+int ListModules();
+int dongledump(int port, const char* pathdump);
+
+void genericgaugepercent(int percent);
+void genericgauge (float progress);
+void bottomgauge(int percent);
+void ClearGauge(void);
+int exist(char *filepath);
+
 const char *ModelNameGet(void);
 int ModelNameInit(void);
 uint16_t getConsoleID();
@@ -34,7 +50,7 @@ typedef struct {
     int ret;
 } modinfo_t;
 
-modinfo_t sio2man, mcman, mcserv, usbd, bdm, fatfs, usbmass, genvmc, fileXio, iomanX;
+modinfo_t sio2man, mcman, padman, mcserv, usbd, bdm, fatfs, usbmass, genvmc, fileXio, iomanX;
 #define EXTERN_MODULE(_irx) extern unsigned char _irx[]; extern unsigned int size_##_irx
 EXTERN_MODULE(ioprp);
 EXTERN_MODULE(usbd_irx);
@@ -44,46 +60,61 @@ EXTERN_MODULE(usbmass_bd_irx);
 EXTERN_MODULE(genvmc_irx);
 EXTERN_MODULE(fileXio_irx);
 EXTERN_MODULE(iomanX_irx);
+EXTERN_MODULE(mcman_irx);
+EXTERN_MODULE(padman_irx);
+EXTERN_MODULE(mcserv_irx);
+EXTERN_MODULE(sio2man_irx);
+
 #define LOADMODULE(_irx, ret) SifExecModuleBuffer(&_irx, size_##_irx, 0, NULL, ret)
 #define LOADMODULEFILE(path, ret) SifLoadStartModule(path, 0, NULL, ret)
 #define MODULE_OK(id, ret) (id >= 0 && ret != 1)
-#define INFORM(x) scr_setfontcolor(MODULE_OK(x.id, x.ret) ? 0x00cc00 : 0x0000cc);scr_printf("\t %s: id:%d ret:%d (%s)\n", #x, x.id, x.ret, MODULE_OK(x.id, x.ret) ? "OK" : "ERR")
+#define INFORM(x) scr_setfontcolor(MODULE_OK(x.id, x.ret) ? 0x00cc00 : 0x0000cc);scr_printf("\t %-10s:(id:%d ret:%d) %-10s\r", #x, x.id, x.ret, MODULE_OK(x.id, x.ret) ? "OK" : "ERR")
 int loadusb();
 
 char ROMVER[15];
 int loadmodulemc();
+void scr_centerputs(const char* buf, char fillerbyte);
+void PrintHeading();
+
+#define mkdir_smart(path...) ((result = mkdir(path) >= 0) || result == -EEXIST)
 
 int main(int argc, char** argv) {
     sio_puts("# dongle dumper start\n# BuilDate: "__DATE__ " " __TIME__ "\n");
-    while (!SifIopRebootBuffer(ioprp, size_ioprp)) {}; // we need homebrew FILEIO
+    //while (!SifIopRebootBuffer(ioprp, size_ioprp)) {}; // replace SECRMAN
     sio_puts("# Waiting for SifIopSync()");
-    while (!SifIopSync()) {}; // wait for IOP to reboot
+    //while (!SifIopSync()) {}; // wait for IOP to reboot
     sio_puts("# startup services");
     SifInitIopHeap(); // Initialize SIF services for loading modules and files.
     SifLoadFileInit();
     fioInit();
-    SifLoadStartModule("rom0:CDVDFSV", 0, NULL, NULL);
+    //SifLoadStartModule("rom0:CDVDFSV", 0, NULL, NULL);
     init_scr();
     scr_setCursor(0);
     sio_puts("# pull romver");
     memset(ROMVER, 0, sizeof(ROMVER));
     GetRomName(ROMVER);
-    scr_printf(".\n\t ===== Namco System 246/256 security dongle dumper =====\n");
-    scr_printf("\tCoded by El_isra. genvmc module borrowed from OPL\n");
-    scr_printf("\thttps://github.com/israpps/system2x6-dongle-dumper\n");
-    scr_printf("\tROMVER:        %s\n", ROMVER);
+    scr_printf("\n\n\n\n");
+    scr_centerputs(" security dongle dumper ", '=');
+    scr_centerputs("Coded by El_isra. genvmc module borrowed from OPL", ' ');
+    scr_centerputs("https://github.com/israpps/system2x6-dongle-dumper", ' ');
     ModelNameInit();
-    scr_printf("\tConsole model: %s\n", ModelNameGet());
-    scr_printf("\tConsole ID:    0x%x\n", getConsoleID());
-    scr_printf("\tMachineType:   %04i\n", MachineType());
+    scr_printf("\tConsole: %s (ROMVER:%s)\n", ModelNameGet(), ROMVER);
     sbv_patch_enable_lmb(); // patch modload to support SifExecModuleBuffer
     sbv_patch_disable_prefix_check(); // remove security from MODLOAD
-
-    if (!(ROMVER[4] == 'T' && ROMVER[5] == 'Z')) {
-        scr_setfontcolor(0x0000FF);
-        scr_printf("\tthis PS2 is NOT a namco system 246.\n\taborting...\n");
+    if (GetIRXInfoByName("secrman_nomecha") != NULL){
+        sleep(4);
+        scr_clear();
+        scr_printf("\n\n\n\n");
+        scr_setfontcolor(0x1111CC);
+        scr_centerputs("FATAL ERROR", ' ');
+        scr_centerputs("Could not replace SECRMAN.IRX", ' ');
+        scr_setfontcolor(0xFFFFFF);
+        scr_centerputs("report https://github.com/israpps/system2x6-dongle-dumper", ' ');
+        scr_centerputs("--", '-');
+        scr_printf("\nModules:\n");
+        ListModules();
         goto tosleep;
-    }
+    };
     if (!loadusb()) goto tosleep;
     
     iomanX.id = LOADMODULE(iomanX_irx, &iomanX.ret);
@@ -98,51 +129,105 @@ int main(int argc, char** argv) {
     }
     if (loadmodulemc() == 0) {
         scr_setfontcolor(0xffffff);
-        int ret;
-        createVMCparam_t p;
-        statusVMCparam_t vmc_stats;
-        memset(&p, 0, sizeof(createVMCparam_t));
-        const char* cardpath = "mass:COH-H10020.bin";
-        strcpy(p.VMC_filename, cardpath);
-        p.VMC_card_slot = 0; // 0=slot 1, 1=slot 2
-        p.VMC_thread_priority = 0xf;
-        scr_printf("\trequesting dump to '%s': ", cardpath);
-        ret = fileXioDevctl("genvmc:", GENVMC_DEVCTL_CREATE_VMC, (void *)&p, sizeof(p), NULL, 0);
-        if (ret == 0) {
-            scr_printf("  OK\n");
-        } else {
-            scr_printf("  Error %d\n", ret);
-            goto tosleep;
-        }
-
-        memset(&vmc_stats, 0, sizeof(statusVMCparam_t));
-        scr_printf("\twaiting VMC file creation...\n");
-        scr_setfontcolor(0x009090);
-        int x=0;
-        while (1) {
-            x = 20;
-            ret = fileXioDevctl("genvmc:", GENVMC_DEVCTL_STATUS, NULL, 0, (void *)&vmc_stats, sizeof(vmc_stats));
-            if (vmc_stats.VMC_progress > 20 && vmc_stats.VMC_progress < 50) scr_setfontcolor(0x00aaaa);
-            if (vmc_stats.VMC_progress > 50 && vmc_stats.VMC_progress < 80) scr_setfontcolor(0x00aa00);
-            if (vmc_stats.VMC_progress > 80) scr_setfontcolor(0x00ff00);
-            if (ret == 0) {
-                scr_printf("\tprogress: %d: %-30s\r", vmc_stats.VMC_progress, vmc_stats.VMC_msg);
-                if (vmc_stats.VMC_status == GENVMC_STAT_AVAIL) {
-                    scr_printf("\n");
-                    break;
-                }
-            }
-
-            while(--x);
-        }
-        scr_setfontcolor(0xffffff);
-        scr_printf("\n\tDone%-30s\n", "");
-        scr_printf("\tVMC status = %d\n", vmc_stats.VMC_error);
     }
+    mkdir("mass:/DONGLE_DUMPER/", 0755);
+    int port = 0;
+    int d=0;
+    int dongcnt=0;
+    scr_clear();
+    PrintHeading();
+    scr_printf("\tSTART: dump | SELECT: Exit | CIRCLE: Change slot\n");
+    scr_printf("\tLEFT/RIGHT: Change dump file\n");
+    scr_printf("\t Source    mc%d:\n", port);
+    scr_printf("\t DumpFile: dongle-%d.bin\n", dongcnt);
+    char fpath[128+1];
+    while (1) {
+        int x = 20;
+        int PAD = ReadCombinedPadStatus();
+        if (PAD ==0) {
+            //hack: no pad pressed, jump to the waiter right away
+        } else if (PAD & PAD_START) {
+            d++;
+            snprintf(fpath, 128, "mass:/DONGLE_DUMPER/dongle-%d.bin\n", dongcnt);
+            if (dongledump(0, fpath) != 0)sleep(10);
+        } else if (PAD & PAD_LEFT) {
+            dongcnt--;
+            if (dongcnt < 0) dongcnt = 100;
+            d++;
+        } else if (PAD & PAD_RIGHT) {
+            dongcnt++;
+            if (dongcnt > 100) dongcnt = 0;
+            d++;
+        } else if (PAD & PAD_SELECT) {
+            return 0;
+        } else if (PAD & PAD_CIRCLE) {
+            port ^= 1;
+            d++;
+        }
+        if (d) {
+            scr_clear();
+            PrintHeading();
+            scr_printf("\tSTART: dump | SELECT: Exit | CIRCLE: Change slot\n");
+            scr_printf("\tLEFT/RIGHT: Change dump file\n");
+            scr_printf("\t Source    mc%d:\n", port);
+            scr_printf("\t DumpFile: dongle-%d.bin\n", dongcnt);
+            d=0;
+        }
+        while(--x);
+    }
+quit:
     sleep(120);
     return 0;
 tosleep:
     SleepThread();
+}
+int dongledump(int port, const char* pathdump) {
+    
+    int ret;
+    createVMCparam_t p;
+    statusVMCparam_t vmc_stats;
+    memset(&p, 0, sizeof(createVMCparam_t));
+    const char* cardpath = pathdump;
+    strcpy(p.VMC_filename, cardpath);
+    p.VMC_card_slot = port; // 0=slot 1, 1=slot 2
+    p.VMC_thread_priority = 0xF;
+    scr_printf("\trequesting dump to '%s': ", cardpath);
+    ret = fileXioDevctl("genvmc:", GENVMC_DEVCTL_CREATE_VMC, (void *)&p, sizeof(p), NULL, 0);
+    if (ret == 0) {
+        scr_printf("  OK\n");
+    } else {
+        scr_printf("  Error %d\n", ret);
+        return -1;
+    }
+    sleep(1);
+    memset(&vmc_stats, 0, sizeof(statusVMCparam_t));
+    scr_printf("\twaiting VMC file creation...\n");
+    scr_setfontcolor(0x009090);
+    int x=0;
+    while (1) {
+        x = 20;
+        ret = fileXioDevctl("genvmc:", GENVMC_DEVCTL_STATUS, NULL, 0, (void *)&vmc_stats, sizeof(vmc_stats));
+
+        scr_setfontcolor(0xffffff);
+        if (ret == 0) {
+            scr_printf("\tStatus: %-30s\r", vmc_stats.VMC_msg);
+            if (vmc_stats.VMC_progress > 20 && vmc_stats.VMC_progress < 50) scr_setfontcolor(0x00aaaa);
+            if (vmc_stats.VMC_progress > 50 && vmc_stats.VMC_progress < 80) scr_setfontcolor(0x00aa00);
+            if (vmc_stats.VMC_progress > 80) scr_setfontcolor(0x00ff00);
+            bottomgauge(vmc_stats.VMC_progress);
+            if (vmc_stats.VMC_status == GENVMC_STAT_AVAIL) {
+                scr_printf("\n");
+                break;
+            }
+        }
+
+        while(--x);
+    }
+    scr_setfontcolor(0xffffff);
+    ClearGauge();
+    scr_printf("\n\tDone%-30s\n", "");
+    scr_printf("\tVMC status = %d\n", vmc_stats.VMC_error);
+    return 0;
 }
 int loadusb() {
     usbd.id = LOADMODULE(usbd_irx, &usbd.ret);
@@ -177,33 +262,150 @@ int loadusb() {
 }
 
 int loadmodulemc() {
-    //sio2man.id = LOADMODULEFILE("mass:/SIO2MAN", &sio2man.ret);
-    //if (!MODULE_OK(sio2man.id, sio2man.ret))
-        sio2man.id = LOADMODULEFILE("rom0:SIO2MAN", &sio2man.ret);
+    sio2man.id = LOADMODULE(sio2man_irx, &sio2man.ret);
     INFORM(sio2man);
     if (!MODULE_OK(sio2man.id, sio2man.ret)) {
         return -1;
     }
-    //mcman.id =   LOADMODULEFILE("mass:/DONGLEMAN", &mcman.ret);
-    //if (!MODULE_OK(mcman.id, mcman.ret))
-        mcman.id =   LOADMODULEFILE("rom0:MCMAN", &mcman.ret);
+    
+    mcman.id =   LOADMODULE(mcman_irx, &mcman.ret);
     INFORM(mcman);
     if (!MODULE_OK(mcman.id, mcman.ret)) {
         return -1;
     }
-    //mcserv.id =  LOADMODULEFILE("mass:/MCSERV", &mcserv.ret);
-    //if (!MODULE_OK(mcserv.id, mcserv.ret))
-        mcserv.id =  LOADMODULEFILE("rom0:MCSERV", &mcserv.ret);
-    INFORM(mcserv);
-    if (!MODULE_OK(mcserv.id, mcserv.ret)) {
-        return -1;
-    }
-    genvmc.id =  LOADMODULE(genvmc_irx, &genvmc.ret); // modified genvmc module that auths card with I_McDetectCard2. this should reset the watchdog before begining dump
+
+    genvmc.id = LOADMODULE(genvmc_irx, &genvmc.ret);
     INFORM(genvmc);
     if (!MODULE_OK(genvmc.id, genvmc.ret)) {
         return -1;
     }
+    
+    mcserv.id =  LOADMODULE(mcserv_irx, &mcserv.ret);
+    INFORM(mcserv);
+    if (!MODULE_OK(mcserv.id, mcserv.ret)) {
+        return -1;
+    }
+    mcInit(MC_TYPE_XMC);
+    padman.id = LOADMODULE(padman_irx, &padman.ret);
+    INFORM(padman);
+    if (!MODULE_OK(padman.id, padman.ret)) {
+        return -1;
+    }
+    PadInitPads();
     return 0;
 }
 
-LIBCGLUE_SUPPORT_NAMCO_SYSTEM_2x6();
+
+void scr_fillhalf(int size, char filler) {
+    for (int x=0; x<(80-size)/2;x++) scr_printf("%c", filler);
+}
+
+void scr_centerputs(const char* buf, char fillerbyte) {
+    scr_fillhalf(strlen(buf), fillerbyte);
+    scr_printf("%s", buf);
+    scr_fillhalf(strlen(buf), fillerbyte);
+    if(strlen(buf) % 2 != 0) scr_printf("\n");
+}
+
+void PrintHeading() {
+    scr_printf("\n\n\n");
+    scr_centerputs(" security dongle dumper ", '=');
+    scr_centerputs("coded by El_isra", ' ');
+}
+
+int exist(char *filepath)
+{
+    if (filepath == NULL)
+        return 0;
+    int fdn;
+
+    fdn = open(filepath, O_RDONLY);
+    if (fdn < 0)
+        return 0;
+
+    close(fdn);
+
+    return 1;
+}
+
+void genericgauge (float progress)
+{
+    int barWidth = 70;
+
+    scr_printf("[");
+    int pos = barWidth * progress;
+    for (int i = 0; i < barWidth; ++i)
+	{
+	  if (i < pos)
+        scr_printf("=");
+	  else if (i == pos)
+        scr_printf(">");
+	  else
+        scr_printf(" ");
+	}
+    
+    scr_printf("]\r");
+}
+
+//percentage represented on signed integer. values from 0-100
+void genericgaugepercent(int percent) {
+    genericgauge(percent*0.01);
+}
+
+#define GAUGELINE 25
+void bottomgauge(int percent) {
+    int X = scr_getX(), Y = scr_getY();
+    scr_setXY(0, GAUGELINE);
+    scr_setfontcolor(0xFFFFFF);
+    genericgauge(percent*0.01);
+    scr_setXY(X, Y);
+}
+void ClearGauge(void) {
+    scr_clearline(GAUGELINE);
+}
+
+smod_mod_info_t* smod_curr = NULL;
+smod_mod_info_t* GetIRXInfoByName(const char* name) {
+    smod_mod_info_t info;
+    smod_curr = NULL;
+    char sName[21];
+    int rv;
+    while ((rv = smod_get_next_mod(smod_curr, &info)) != 0) {
+        smod_curr = &info;
+        if (smod_curr == NULL) continue;
+        smem_read(info.name, sName, 20);
+        //printf("%-21s:0x%x\n", sName, info.version);
+        sName[20] = 0;
+        if (!strcmp(name, sName)) {
+            return smod_curr;
+        }
+    }
+    return NULL;
+}
+
+int ListModules() {
+    smod_mod_info_t info;
+    smod_curr = NULL;
+    char sName[21];
+    int rv;
+    int modc=0;
+    int _found_secrman=0;
+    while ((rv = smod_get_next_mod(smod_curr, &info)) != 0) {
+        int found_secrman=0;
+        smod_curr = &info;
+        if (smod_curr == NULL) continue;
+        smem_read(info.name, sName, 20);
+        sName[20] = 0;
+        if (!_found_secrman && (strstr(sName, "secrman") == NULL)){
+            _found_secrman=1;
+            found_secrman=1;
+        } 
+        if ((modc%2)==0) scr_printf("\n"); else scr_printf(" | ");
+        if (found_secrman) scr_setfontcolor(0x00FFFF);
+        scr_printf("%-21s:0x%x ", sName, info.version);
+        if (found_secrman) scr_setfontcolor(0xFFFFFF);
+        modc++;
+    }
+    scr_printf("\n");
+    return modc;
+}

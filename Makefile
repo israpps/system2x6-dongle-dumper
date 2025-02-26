@@ -8,12 +8,12 @@
 
 EE_BIN = DONGLE_DUMPER.ELF
 
-EE_OBJS = main.o modelname.o ioprp.o \
-	usbd.o bdm.o bdmfs_fatfs.o usbmass_bd.o genvmc.o fileXio.o iomanX.o
+EE_OBJS = main.o modelname.o pad.o ioprp.o \
+	usbd.o bdm.o bdmfs_fatfs.o usbmass_bd.o genvmc.o fileXio.o iomanX.o mcman.o padman.o sio2man.o mcserv.o
 
 EE_CFLAGS += -fdata-sections -ffunction-sections -DNEWLIB_PORT_AWARE
 EE_LDFLAGS += -Wl,--gc-sections
-EE_LIBS += -liopreboot -ldebug -lpatches -lfileXio -lcdvd
+EE_LIBS += -liopreboot -ldebug -lpatches -lfileXio -lcdvd -lpad -lmc
 
 ifeq ($(DEBUG), 1)
   EE_CFLAGS += -DDEBUG -O0 -g
@@ -27,10 +27,12 @@ all: $(EE_BIN)
 clean:
 	rm -rf $(EE_OBJS) $(EE_BIN)
 
-ioprp.img:
-	wget https://github.com/israpps/wLaunchELF_ISR/raw/system-2x6-support/iop/__precompiled/IOPRP_FILEIO.IMG -O $@
-
 %.c: %.img
+	bin2c $< $@ ioprp
+
+
+.INTERMEDIATE: src/ioprp.c $(EE_OBJS)
+src/ioprp.c: ioprp.img
 	bin2c $< $@ ioprp
 
 vpath %.irx iop/
