@@ -40,6 +40,8 @@ int PollPadState(int port, int slot);
 
 void get_Kc(const void *buffer, void *Kc);
 void get_Kbit(const void *buffer, void *Kbit);
+void store_kc(void *buffer, const void *kc);
+void store_kbit(void *buffer, const void *kbit);
 void hexdump (const char* name, unsigned char* buf, int size);
 
 int exist(char *filepath);
@@ -103,6 +105,10 @@ void genericgauge (float progress);
 void bottomgauge(int percent);
 void ClearGauge(void);
 
+/// @brief Unbound KBIT/KC vector for boot.bin: arcade mechacon expects a fixed decrypted value, wich allows us to just paste these KBIT/KC to "unbind" the bootfile
+static const uint8_t clean_kbit[16] = {0x69, 0xA1, 0xEF, 0x2E, 0x57, 0x7F, 0xAE, 0xE7, 0x58, 0x52, 0x9A, 0xD8, 0x46, 0x55, 0x8E, 0x05};
+static const uint8_t clean_kcon[16] = {0xDA, 0x66, 0xA5, 0xD4, 0x31, 0x1C, 0x3B, 0x5A, 0x39, 0x42, 0x3C, 0x7B, 0xB9, 0x56, 0xD3, 0x5F};
+
 const char* UNBOUND = "boot.kelf";
 char* BOUND = "mc0:boot.bin";
 int BindKelf(int port, const char* input, const char* output) {
@@ -156,6 +162,8 @@ int BindKelf(int port, const char* input, const char* output) {
             scr_setfontcolor(0x00FFFF); hexdump("Kbit", Kbit, 16); hexdump("Kc", Kc, 16); scr_setfontcolor(0xFFFFFF);
             scr_printf("\tBinding update to security Dongle on mc%d:\n", port);
             bottomgauge(50);
+            store_kbit(buf, clean_kbit);
+            store_kc  (buf, clean_kcon);
             result = mechaemu_downloadfile(port + 2, 0, buf);
             bottomgauge(60);
             if (result) {
@@ -363,6 +371,39 @@ int loadmodulemc() {
     return 0;
 }
 
+void store_kbit(void *buffer, const void *kbit)
+{
+    const SecrKELFHeader_t *header = buffer;
+    int offset                     = 0x20, kbit_offset;
+
+    if (header->BIT_count > 0)
+        offset += header->BIT_count * sizeof(SecrBitBlockData_t);
+    if (((header->flags) & 1) != 0)
+        offset += ((unsigned char *)buffer)[offset] + 1;
+    if (((header->flags) & 0xF000) == 0)
+        offset += 8;
+
+    kbit_offset = (unsigned int)buffer + offset;
+    memcpy((void *)kbit_offset, kbit, 16);
+    printf("kbit_offset: %d\n", kbit_offset);
+}
+
+void store_kc(void *buffer, const void *kc)
+{
+    const SecrKELFHeader_t *header = buffer;
+    int offset                     = 0x20, kc_offset;
+
+    if (header->BIT_count > 0)
+        offset += header->BIT_count * sizeof(SecrBitBlockData_t);
+    if (((header->flags) & 1) != 0)
+        offset += ((unsigned char *)buffer)[offset] + 1;
+    if (((header->flags) & 0xF000) == 0)
+        offset += 8;
+
+    kc_offset = (unsigned int)buffer + offset + 0x10; // Goes after Kbit.
+    memcpy((void *)kc_offset, kc, 16);
+    printf("kc_offset: %d\n", kc_offset);
+}
 
 // 0x00002b20
 void get_Kbit(const void *buffer, void *Kbit)
@@ -380,7 +421,6 @@ void get_Kbit(const void *buffer, void *Kbit)
 
     kbit_offset = (u8 *)buffer + offset;
     memcpy(Kbit, (void *)kbit_offset, 16);
-    
 }
 
 // 0x00002c80
@@ -399,7 +439,6 @@ void get_Kc(const void *buffer, void *Kc)
 
     kc_offset = (u8 *)buffer + offset + 0x10; // Goes after Kbit
     memcpy(Kc, (void *)kc_offset, 16);
-    
 }
 
 void hexdump (const char* name, unsigned char* buf, int size) {
